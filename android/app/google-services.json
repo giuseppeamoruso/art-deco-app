@@ -1,0 +1,62 @@
+{
+  "project_info": {
+    "project_number": "1025005736352",
+    "project_id": "barber-35eca",
+    "storage_bucket": "barber-35eca.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1025005736352:android:4302f12914eaac3d2954c5",
+        "android_client_info": {
+          "package_name": "com.example.barber_shop"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1025005736352-cdngvqiq1r3f1a5h005onejor8a8t7v2.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.barber_shop",
+            "certificate_hash": "ef4dcd20ae135a3985e6aab880c5f1df8b7664a9"
+          }
+        },
+        {
+          "client_id": "1025005736352-j9pb7kf58e1jv2olajnls8b8r1hsto1l.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.barber_shop",
+            "certificate_hash": "5752988e38a6c3f909acec4c5ec2ac8e62929442"
+          }
+        },
+        {
+          "client_id": "1025005736352-0op1gd6chgcr3v2cd92tfblmj589mku5.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD5VeZDlLuye1_qadD-GFcEzrsGqXliPgc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1025005736352-0op1gd6chgcr3v2cd92tfblmj589mku5.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "1025005736352-g9bc0uddu4jch9jhicrqpb076089l487.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.barberShop"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

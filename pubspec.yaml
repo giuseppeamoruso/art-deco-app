@@ -1,0 +1,59 @@
+name: art_deco
+description: "Art Decò - Prenotazioni barbiere"
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.8.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  flutter_localizations:
+    sdk: flutter
+
+  # Notifiche
+  flutter_local_notifications: ^17.0.0
+  timezone: ^0.9.0
+  permission_handler: ^11.0.0
+
+  # Firebase & Autenticazione
+  firebase_core: ^3.13.1
+  firebase_auth: ^5.5.4
+  google_sign_in: ^6.2.1
+  pdf: ^3.10.4
+  printing: ^5.11.0
+  intl: ^0.20.2
+  firebase_messaging: ^15.0.0
+
+  # Database & Backend
+  supabase_flutter: ^2.9.0
+  http: ^1.4.0
+
+  # Pagamenti
+  flutter_stripe: ^10.1.1
+
+  # UI Base
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.13.1
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/logo.jpg"
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/images/logo.jpg"
+
+flutter:
+  uses-material-design: true
+
+  # Assets - Immagini e risorse
+  assets:
+    - assets/images/
