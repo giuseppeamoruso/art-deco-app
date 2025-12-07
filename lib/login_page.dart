@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:io'; // ✅ AGGIUNGI QUESTO IMPORT
 import 'home_page.dart';
 import 'admin_dashboard_page.dart';
+import 'onesignal_push_service.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -212,6 +213,7 @@ class _LoginPageState extends State<LoginPage> {
           email: googleUser.email,
           telefono: null,
         );
+        await OneSignalPushService.loginUser(userCredential.user!.uid);
 
         // Controlla ruolo e naviga
         await _checkUserRoleAndNavigate();

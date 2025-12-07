@@ -1,5 +1,7 @@
+import 'package:art_deco/theme_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'appointment_notification_service.dart';
@@ -7,8 +9,11 @@ import 'firebase_options.dart';
 import 'login_page.dart';
 import 'home_page.dart';
 import 'admin_dashboard_page.dart';
-import 'appointment_notification_service.dart';
 import 'notification_polling_service.dart';
+import 'onesignal_push_service.dart';
+import 'package:intl/date_symbol_data_local.dart';
+
+
 // ✅ Configurazione Supabase
 const String supabaseUrl = 'https://fykszvedjcgurryynhha.supabase.co';
 const String supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ5a3N6dmVkamNndXJyeXluaGhhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYxODc1ODksImV4cCI6MjA3MTc2MzU4OX0.H_HOV90GkbdZ_0Ue5ml781Qm1q8N6eukcDgXHAqE0VY';
@@ -32,9 +37,28 @@ void main() async {
     );
     print('✅ Supabase inizializzato');
 
-    // 3. Inizializza Notifiche
+    // 3. Inizializza Notifiche Locali
     await AppointmentNotificationService.initialize();
-    print('✅ Notifiche inizializzate');
+    print('✅ Notifiche locali inizializzate');
+
+    // 4. ✅ Inizializza OneSignal Push Notifications
+    await OneSignalPushService.initialize();
+    print('✅ OneSignal Push inizializzato');
+    await initializeDateFormatting('it_IT', null);
+    print('✅ Formattazione date inizializzata');
+
+    // 5. ✅ Listener per login/logout automatico su OneSignal
+    firebase_auth.FirebaseAuth.instance.authStateChanges().listen((firebase_auth.User? user) async {
+      if (user != null) {
+        // Utente loggato → Registra su OneSignal
+        await OneSignalPushService.loginUser(user.uid);
+        print('👤 Utente registrato su OneSignal: ${user.uid}');
+      } else {
+        // Utente sloggato → Logout da OneSignal
+        await OneSignalPushService.logoutUser();
+        print('🚪 Utente sloggato da OneSignal');
+      }
+    });
 
   } catch (e) {
     print('❌ Errore inizializzazione: $e');
@@ -48,15 +72,26 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final currentTheme = ThemeManager.getCurrentTheme();
     return MaterialApp(
       title: 'Art Decò',
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        useMaterial3: true,
-      ),
-      home: const AuthWrapper(), // ✅ Controlla stato autenticazione
+      theme: ThemeManager.getTheme(currentTheme),
+
+      // 🔥 AGGIUNGI QUESTO
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [
+        Locale('it', 'IT'),
+        Locale('en', 'US'),
+      ],
+
+      home: const AuthWrapper(),
       debugShowCheckedModeBanner: false,
     );
+
   }
 }
 

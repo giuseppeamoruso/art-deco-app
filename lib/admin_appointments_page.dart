@@ -1,9 +1,12 @@
+import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:flutter/services.dart';
+
+import 'onesignal_push_service.dart';
 
 class AdminAppointmentsPage extends StatefulWidget {
   const AdminAppointmentsPage({super.key});
@@ -816,7 +819,14 @@ class _AdminAppointmentsPageState extends State<AdminAppointmentsPage> with Sing
     );
   }
 
-  Future<void> _updateAppointment(int appointmentId, DateTime newDate, String newTime, int newStylistId, String newNote, Map<String, dynamic> originalAppointment) async {
+  Future<void> _updateAppointment(
+      int appointmentId,
+      DateTime newDate,
+      String newTime,
+      int newStylistId,
+      String newNote,
+      Map<String, dynamic> originalAppointment
+      ) async {
     try {
       final supabase = Supabase.instance.client;
 
@@ -857,10 +867,127 @@ class _AdminAppointmentsPageState extends State<AdminAppointmentsPage> with Sing
         'note': newNote.trim().isEmpty ? null : newNote.trim(),
       }).eq('id', appointmentId);
 
-      _showSuccessMessage('Appuntamento modificato con successo');
+      print('✅ Appuntamento modificato con ID: $appointmentId');
+
+      // 📨 NOTIFICA PUSH ONESIGNAL
+      try {
+        // Recupera dati utente (Firebase UID + nome)
+        String? firebaseUid;
+        String clientName = 'Cliente';
+
+        try {
+          final userRecord = await supabase
+              .from('USERS')
+              .select('uid, nome, cognome')
+              .eq('id', originalAppointment['user_id'])
+              .single();
+
+          firebaseUid = userRecord['uid'];
+          clientName = '${userRecord['nome']} ${userRecord['cognome']}';
+          print('👤 Dati utente recuperati: $clientName (UID: $firebaseUid)');
+        } catch (e) {
+          print('⚠️ Errore recupero dati utente: $e');
+        }
+
+        // Controlla se data/ora sono cambiate
+        final originalDate = DateTime.parse(originalAppointment['data']);
+        final originalTime = originalAppointment['ora_inizio'].substring(0, 5);
+
+        if ((originalDate != newDate || originalTime != newTime) && firebaseUid != null) {
+          print('📤 Invio notifica push di modifica...');
+
+          // Invia notifica push tramite OneSignal
+          final pushSent = await OneSignalPushService.sendAppointmentModificationNotification(
+            firebaseUid: firebaseUid,
+            clientName: clientName,
+            oldDate: originalDate,
+            newDate: newDate,
+            oldTime: originalTime,
+            newTime: newTime,
+            appointmentId: appointmentId,
+          );
+
+          if (pushSent) {
+            print('✅ Notifica push inviata con successo al cliente');
+            try {
+              final dateString = '${newDate.year}-${newDate.month.toString().padLeft(2, '0')}-${newDate.day.toString().padLeft(2, '0')}';
+
+              // 🔍 DEBUG: Stampa tutti i valori PRIMA dell'insert
+              print('🔍 DEBUG NOTIFICA:');
+              print('   - user_id: ${originalAppointment['user_id']} (tipo: ${originalAppointment['user_id'].runtimeType})');
+              print('   - appointment_id: $appointmentId (tipo: ${appointmentId.runtimeType})');
+              print('   - dateString: $dateString');
+              print('   - newTime: $newTime');
+
+              // 🔍 DEBUG: Controlla l'utente attualmente loggato
+              final currentUser = firebase_auth.FirebaseAuth.instance.currentUser;
+              print('   - Admin Firebase UID: ${currentUser?.uid}');
+
+              // 🔍 DEBUG: Controlla il ruolo dell'admin
+              try {
+                final adminCheck = await supabase
+                    .from('USERS')
+                    .select('role, id')
+                    .eq('uid', currentUser!.uid)
+                    .single();
+                print('   - Admin role: ${adminCheck['role']}');
+                print('   - Admin user_id: ${adminCheck['id']}');
+              } catch (e) {
+                print('   ⚠️ Errore controllo admin: $e');
+              }
+
+              // 🔍 DEBUG: Verifica che l'utente destinatario esista
+              try {
+                final targetUser = await supabase
+                    .from('USERS')
+                    .select('id, uid, role')
+                    .eq('id', originalAppointment['user_id'])
+                    .single();
+                print('   - Target user_id: ${targetUser['id']}');
+                print('   - Target Firebase UID: ${targetUser['uid']}');
+                print('   - Target role: ${targetUser['role']}');
+              } catch (e) {
+                print('   ⚠️ Errore controllo target user: $e');
+              }
+
+              print('🔍 Tentativo insert notifica...');
+
+              await supabase.from('user_notifications').insert({
+                'user_id': originalAppointment['user_id'],
+                'title': '📝 Appuntamento Modificato',
+                'message': 'Il tuo appuntamento è stato spostato a ${_formatDate(dateString)} alle $newTime',
+                'type': 'appointment_modified',
+                'appointment_id': appointmentId,
+                'read': false,
+              });
+
+              print('✅ Notifica salvata nel database');
+            } catch (e) {
+              print('⚠️ Errore salvataggio notifica DB: $e');
+            }
+            _showSuccessMessage('Appuntamento modificato e notifica inviata');
+          } else {
+            print('⚠️ Invio notifica push fallito');
+            _showSuccessMessage('Appuntamento modificato (notifica non inviata)');
+          }
+        } else {
+          if (firebaseUid == null) {
+            print('⚠️ Firebase UID non trovato');
+          } else {
+            print('ℹ️ Data/ora non cambiate, notifica non necessaria');
+          }
+          _showSuccessMessage('Appuntamento modificato con successo');
+        }
+
+      } catch (notifError) {
+        print('⚠️ Errore gestione notifiche: $notifError');
+        _showSuccessMessage('Appuntamento modificato (errore notifica)');
+      }
+
       _loadAppointments();
+
     } catch (e) {
-      print('Errore modifica appuntamento: $e');
+      print('❌ Errore modifica appuntamento: $e');
       _showErrorMessage('Errore durante la modifica');
     }
   }

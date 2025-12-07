@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'appointment_notification_service.dart';
+import 'onesignal_push_service.dart';
 
 class EditAppointmentPage extends StatefulWidget {
   final Map<String, dynamic> appointment;
@@ -414,7 +415,7 @@ class _EditAppointmentPageState extends State<EditAppointmentPage> with SingleTi
 
     try {
       final supabase = Supabase.instance.client;
-
+      print("ciao");
       // Calcola orario fine
       final startDateTime = DateTime.parse('${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')} $_selectedTimeSlot:00');
       final endDateTime = startDateTime.add(_totalDuration);
@@ -455,51 +456,73 @@ class _EditAppointmentPageState extends State<EditAppointmentPage> with SingleTi
 
       // 🔔 GESTIONE NOTIFICHE
       try {
-        // Cancella la vecchia notifica
+        // Cancella la vecchia notifica locale
         await AppointmentNotificationService.cancelAppointmentReminder(
             widget.appointment['id']
         );
-        print('🗑️ Vecchia notifica cancellata');
+        print('🗑️ Vecchia notifica locale cancellata');
 
-        // Ottieni nome cliente dall'appuntamento originale
+        // Ottieni dati utente (Firebase UID + nome)
+        String? firebaseUid;
         String clientName = 'Cliente';
+
         try {
           final userRecord = await supabase
               .from('USERS')
-              .select('nome, cognome')
+              .select('uid, nome, cognome')
               .eq('id', widget.appointment['user_id'])
               .single();
+
+          firebaseUid = userRecord['uid'];
           clientName = '${userRecord['nome']} ${userRecord['cognome']}';
+          print('👤 Dati utente recuperati: $clientName (UID: $firebaseUid)');
         } catch (e) {
-          print('⚠️ Errore recupero nome cliente: $e');
+          print('⚠️ Errore recupero dati utente: $e');
         }
 
-        // Programma la nuova notifica con i dati aggiornati
+        // Programma la nuova notifica locale (reminder giorno prima)
         await AppointmentNotificationService.scheduleAppointmentReminder(
           appointmentId: widget.appointment['id'],
           clientName: clientName,
           stylistName: _selectedStylist!['descrizione'],
           appointmentDate: _selectedDate,
-          appointmentTime: _selectedTimeSlot ?? widget.appointment['ora_inizio'].substring(0, 5), // ✅ FIX
+          appointmentTime: _selectedTimeSlot ?? widget.appointment['ora_inizio'].substring(0, 5),
           services: _selectedServices
               .map((s) => s['descrizione'] as String)
               .toList(),
         );
-        print('🔔 Nuova notifica programmata');
+        print('🔔 Nuova notifica locale programmata');
 
-        // 📨 Notifica immediata della modifica (solo se data/ora sono cambiate)
+        // 📨 NOTIFICA PUSH IMMEDIATA se data/ora sono cambiate
         final originalDate = DateTime.parse(widget.appointment['data']);
         final originalTime = widget.appointment['ora_inizio'].substring(0, 5);
-        final newTime = _selectedTimeSlot ?? originalTime; // ✅ FIX
-        if (originalDate != _selectedDate || originalTime != _selectedTimeSlot) {
-          await AppointmentNotificationService.sendModificationNotification(
+        final newTime = _selectedTimeSlot ?? originalTime;
+
+        if ((originalDate != _selectedDate || originalTime != _selectedTimeSlot) && firebaseUid != null) {
+          print('📤 Invio notifica push di modifica...');
+
+          // Invia notifica push tramite OneSignal
+          final pushSent = await OneSignalPushService.sendAppointmentModificationNotification(
+            firebaseUid: firebaseUid,
             clientName: clientName,
             oldDate: originalDate,
             newDate: _selectedDate,
             oldTime: originalTime,
             newTime: newTime,
+            appointmentId: widget.appointment['id'],
           );
-          print('📨 Notifica modifica inviata al cliente');
+
+          if (pushSent) {
+            print('✅ Notifica push modifica inviata con successo al cliente');
+          } else {
+            print('⚠️ Invio notifica push fallito (controllare log OneSignal)');
+          }
+        } else {
+          if (firebaseUid == null) {
+            print('⚠️ Firebase UID non trovato, notifica push non inviata');
+          } else {
+            print('ℹ️ Data/ora non cambiate, notifica push non necessaria');
+          }
         }
 
       } catch (notifError) {

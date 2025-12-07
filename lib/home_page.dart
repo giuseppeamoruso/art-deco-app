@@ -4,8 +4,12 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'login_page.dart';
 import 'booking_selection_page.dart';
 import 'my_appointments_page.dart';
+import 'notification_page.dart';
+import 'onesignal_service.dart';
 import 'services_list_page.dart';
 import 'profile_page.dart';
+import 'theme_manager.dart';
+import 'seasonal_decoration.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -17,20 +21,80 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   final firebase_auth.User? user = firebase_auth.FirebaseAuth.instance.currentUser;
 
+  // ✅ VARIABILI PER NOTIFICHE
+  int _unreadNotificationsCount = 0;
+  List<Map<String, dynamic>> _recentNotifications = [];
+
   @override
   void initState() {
     super.initState();
-    // Verifica se l'utente è autenticato
     if (user == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _navigateToLogin();
       });
+    } else {
+      _loadNotifications();
     }
   }
 
-  // Logout dell'utente
+  // ✅ CARICA NOTIFICHE
+  Future<void> _loadNotifications() async {
+    if (user == null) return;
+
+    try {
+      final supabase = Supabase.instance.client;
+
+      final userRecord = await supabase
+          .from('USERS')
+          .select('id')
+          .eq('uid', user!.uid)
+          .single();
+
+      final userId = userRecord['id'] as int;
+
+      final unreadResponse = await supabase
+          .from('user_notifications')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('read', false);
+
+      final recentResponse = await supabase
+          .from('user_notifications')
+          .select()
+          .eq('user_id', userId)
+          .order('created_at', ascending: false)
+          .limit(2);
+
+      if (mounted) {
+        setState(() {
+          _unreadNotificationsCount = unreadResponse.length;
+          _recentNotifications = List<Map<String, dynamic>>.from(recentResponse);
+        });
+      }
+    } catch (e) {
+      print('❌ Errore caricamento notifiche: $e');
+    }
+  }
+
+  String _formatNotificationTime(String dateTimeString) {
+    try {
+      final dateTime = DateTime.parse(dateTimeString);
+      final now = DateTime.now();
+      final difference = now.difference(dateTime);
+
+      if (difference.inMinutes < 1) return 'Ora';
+      if (difference.inHours < 1) return '${difference.inMinutes}m fa';
+      if (difference.inDays < 1) return '${difference.inHours}h fa';
+      if (difference.inDays == 1) return 'Ieri';
+      return '${difference.inDays}g fa';
+    } catch (e) {
+      return '';
+    }
+  }
+
   Future<void> _signOut() async {
     try {
+      await OneSignalService.logoutUser();
       await firebase_auth.FirebaseAuth.instance.signOut();
       if (mounted) {
         _navigateToLogin();
@@ -93,7 +157,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // Controlla se il profilo è completo prima di procedere alla prenotazione
   Future<void> _checkProfileAndNavigateToBooking() async {
     try {
       final user = firebase_auth.FirebaseAuth.instance.currentUser;
@@ -102,7 +165,6 @@ class _HomePageState extends State<HomePage> {
         return;
       }
 
-      // Mostra loading
       showDialog(
         context: context,
         barrierDismissible: false,
@@ -118,34 +180,27 @@ class _HomePageState extends State<HomePage> {
           .eq('uid', user.uid)
           .maybeSingle();
 
-      // Chiudi loading
       if (mounted) {
         Navigator.of(context).pop();
       }
 
-      // Controlla se i dati sono completi
       final telefono = response?['telefono']?.toString().trim() ?? '';
       final nome = response?['nome']?.toString().trim() ?? '';
       final cognome = response?['cognome']?.toString().trim() ?? '';
 
       if (telefono.isEmpty || nome.isEmpty || cognome.isEmpty) {
-        // Dati incompleti, mostra dialog per completare profilo
         _showProfileIncompleteDialog();
       } else {
-        // Dati completi, procedi con la prenotazione
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (context) => const BookingSelectionPage(),
           ),
         );
       }
-
     } catch (e) {
-      // Chiudi loading se ancora aperto
       if (mounted) {
         Navigator.of(context).pop();
       }
-
       print('Errore controllo profilo: $e');
       _showErrorMessage('Errore nel controllo del profilo. Riprova.');
     }
@@ -279,7 +334,6 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    // Se l'utente non è autenticato, mostra uno schermo di caricamento
     if (user == null) {
       return const Scaffold(
         backgroundColor: Color(0xFF1a1a1a),
@@ -296,9 +350,7 @@ class _HomePageState extends State<HomePage> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF2d2d2d),
         elevation: 0,
-        // Rimuovi il title dall'AppBar
         title: null,
-        // Logo e Art Decò a sinistra
         leading: null,
         leadingWidth: 0,
         flexibleSpace: SafeArea(
@@ -306,7 +358,6 @@ class _HomePageState extends State<HomePage> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
               children: [
-                // Logo piccolo
                 Container(
                   width: 40,
                   height: 40,
@@ -332,7 +383,6 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
                 const SizedBox(width: 12),
-                // Scritta Art Decò come immagine
                 Container(
                   height: 30,
                   child: Image.asset(
@@ -340,7 +390,6 @@ class _HomePageState extends State<HomePage> {
                     height: 30,
                     fit: BoxFit.contain,
                     errorBuilder: (context, error, stackTrace) {
-                      // Fallback al testo se l'immagine non si carica
                       return const Text(
                         'Art Decò',
                         style: TextStyle(
@@ -356,7 +405,53 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
                 const Spacer(),
-                // Pulsante logout a destra
+
+                // ✅ CAMPANELLINA NOTIFICHE
+                Stack(
+                  children: [
+                    IconButton(
+                      onPressed: () async {
+                        await Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) => const NotificationsPage(),
+                          ),
+                        );
+                        _loadNotifications();
+                      },
+                      icon: const Icon(
+                        Icons.notifications,
+                        color: Colors.white,
+                      ),
+                      tooltip: 'Notifiche',
+                    ),
+                    if (_unreadNotificationsCount > 0)
+                      Positioned(
+                        right: 8,
+                        top: 8,
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: const BoxDecoration(
+                            color: Colors.red,
+                            shape: BoxShape.circle,
+                          ),
+                          constraints: const BoxConstraints(
+                            minWidth: 16,
+                            minHeight: 16,
+                          ),
+                          child: Text(
+                            _unreadNotificationsCount > 9 ? '9+' : '$_unreadNotificationsCount',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+
                 IconButton(
                   onPressed: _showLogoutDialog,
                   icon: const Icon(
@@ -370,72 +465,334 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
       ),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Sezioni principali - ora iniziano subito
-              Expanded(
-                child: GridView.count(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 16,
-                  mainAxisSpacing: 16,
-                  children: [
-                    _buildMenuCard(
-                      title: 'Prenota Appuntamento',
-                      icon: Icons.calendar_today,
-                      color: Colors.blue,
-                      onTap: _checkProfileAndNavigateToBooking,
+      body: Stack(
+        children: [
+          // 🎨 DECORAZIONI STAGIONALI
+          const SeasonalDecoration(),
+
+          // CONTENUTO PRINCIPALE
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(20.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 🎄 BANNER STAGIONALE
+                  _buildSeasonalBanner(),
+                  const SizedBox(height: 16),
+
+                  // GRID MENU
+                  Expanded(
+                    child: GridView.count(
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 16,
+                      mainAxisSpacing: 16,
+                      children: [
+                        _buildMenuCard(
+                          title: 'Prenota Appuntamento',
+                          icon: Icons.calendar_today,
+                          color: Colors.blue,
+                          onTap: _checkProfileAndNavigateToBooking,
+                        ),
+                        _buildMenuCard(
+                          title: 'I Miei Appuntamenti',
+                          icon: Icons.event_note,
+                          color: Colors.green,
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (context) => const MyAppointmentsPage(),
+                              ),
+                            );
+                          },
+                        ),
+                        _buildMenuCard(
+                          title: 'Servizi',
+                          icon: Icons.content_cut,
+                          color: Colors.purple,
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (context) => const ServicesListPage(),
+                              ),
+                            );
+                          },
+                        ),
+                        _buildMenuCard(
+                          title: 'Profilo',
+                          icon: Icons.person,
+                          color: Colors.orange,
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (context) => const ProfilePage(),
+                              ),
+                            );
+                          },
+                        ),
+                      ],
                     ),
-                    _buildMenuCard(
-                      title: 'I Miei Appuntamenti',
-                      icon: Icons.event_note,
-                      color: Colors.green,
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (context) => const MyAppointmentsPage(),
-                          ),
-                        );
-                      },
-                    ),
-                    _buildMenuCard(
-                      title: 'Servizi',
-                      icon: Icons.content_cut,
-                      color: Colors.purple,
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (context) => const ServicesListPage(),
-                          ),
-                        );
-                      },
-                    ),
-                    _buildMenuCard(
-                      title: 'Profilo',
-                      icon: Icons.person,
-                      color: Colors.orange,
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (context) => const ProfilePage(),
-                          ),
-                        );
-                      },
-                    ),
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // NOTIFICHE RECENTI
+                  if (_recentNotifications.isNotEmpty) ...[
+                    _buildRecentNotifications(),
+                    const SizedBox(height: 20),
                   ],
-                ),
+
+                  // CONTATTI
+                  _buildContactInfo(),
+                ],
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-              const SizedBox(height: 20),
+  // 🎄 BANNER STAGIONALE
+  Widget _buildSeasonalBanner() {
+    final now = DateTime.now();
+    final month = now.month;
+    final day = now.day;
 
-              // Sezione informazioni contatto
-              _buildContactInfo(),
+    // 🎄 NATALE - Banner solo 24, 25, 26 Dicembre
+    if (month == 12 && (day == 24 || day == 25 || day == 26)) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              ThemeManager.christmasRed,
+              ThemeManager.christmasGreen,
             ],
           ),
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: ThemeManager.christmasRed.withOpacity(0.3),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
+        child: Row(
+          children: [
+            const Text('🎄', style: TextStyle(fontSize: 32)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const [
+                  Text(
+                    'Buon Natale!',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    'Auguri da Art Decò 🎅',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Text('🎁', style: TextStyle(fontSize: 32)),
+          ],
+        ),
+      );
+    }
+
+    // 🎃 HALLOWEEN - Banner solo 31 Ottobre
+    if (month == 10 && day == 31) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              ThemeManager.halloweenOrange,
+              ThemeManager.halloweenPurple,
+            ],
+          ),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          children: [
+            const Text('🎃', style: TextStyle(fontSize: 32)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const [
+                  Text(
+                    'Happy Halloween!',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    'Dolcetto o scherzetto? 👻',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Text('🕷️', style: TextStyle(fontSize: 32)),
+          ],
+        ),
+      );
+    }
+
+    // ☀️ ESTATE
+    final theme = ThemeManager.getCurrentTheme();
+    if (theme == AppTheme.summer) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [
+              Color(0xFF00BCD4),
+              Color(0xFFFFEB3B),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          children: [
+            const Text('☀️', style: TextStyle(fontSize: 32)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const [
+                  Text(
+                    'Buona Estate!',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    'Godetevi il sole! 🏖️',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Text('🌊', style: TextStyle(fontSize: 32)),
+          ],
+        ),
+      );
+    }
+
+    return const SizedBox.shrink();
+  }
+
+  Widget _buildRecentNotifications() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2d2d2d),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Notifiche Recenti',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              TextButton(
+                onPressed: () async {
+                  await Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => const NotificationsPage(),
+                    ),
+                  );
+                  _loadNotifications();
+                },
+                child: const Text('Vedi tutte'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ..._recentNotifications.map((notification) {
+            return Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1a1a1a),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.notifications,
+                    color: Colors.blue,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          notification['title'],
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Text(
+                          notification['message'],
+                          style: TextStyle(
+                            color: Colors.grey[400],
+                            fontSize: 12,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _formatNotificationTime(notification['created_at']),
+                    style: TextStyle(
+                      color: Colors.grey[500],
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+        ],
       ),
     );
   }
@@ -524,8 +881,6 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
           const SizedBox(height: 12),
-
-          // Indirizzo
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -547,8 +902,6 @@ class _HomePageState extends State<HomePage> {
             ],
           ),
           const SizedBox(height: 8),
-
-          // Telefono
           Row(
             children: [
               Icon(
@@ -567,8 +920,6 @@ class _HomePageState extends State<HomePage> {
             ],
           ),
           const SizedBox(height: 8),
-
-          // Email
           Row(
             children: [
               Icon(
@@ -589,15 +940,11 @@ class _HomePageState extends State<HomePage> {
             ],
           ),
           const SizedBox(height: 12),
-
-          // Divisore
           Container(
             height: 1,
             color: Colors.white.withOpacity(0.1),
           ),
           const SizedBox(height: 12),
-
-          // Orari
           const Text(
             'Orari di apertura',
             style: TextStyle(
@@ -607,7 +954,6 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
           const SizedBox(height: 8),
-
           Row(
             children: [
               Icon(

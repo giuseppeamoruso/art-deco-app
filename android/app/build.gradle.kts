@@ -33,6 +33,8 @@ android {
         targetSdk = 35  // ✅ PERFETTO: aggiornato
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["onesignal_app_id"] = "f6f03c5c-bb2d-4eb2-91b3-d5192747a10f"
+        manifestPlaceholders["onesignal_google_project_number"] = "1025005736352"
     }
 
     buildTypes {
