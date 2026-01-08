@@ -38,7 +38,8 @@ class _ServiceSelectionPageState extends State<ServiceSelectionPage> {
       final response = await supabase
           .from('SERVIZI')
           .select('id, descrizione, prezzo, durata')
-          .eq('sesso_id', sessoId);
+          .eq('sesso_id', sessoId)
+          .order('descrizione', ascending: true); // 🆕 Ordine alfabetico A-Z
 
       setState(() {
         _services = List<Map<String, dynamic>>.from(response);

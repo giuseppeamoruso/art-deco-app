@@ -2318,6 +2318,77 @@ class _AdminStylistSelectionPageState extends State<AdminStylistSelectionPage> {
     _loadAvailableStylists();
   }
 
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 🔒 FUNZIONE _loadAvailableStylists CORRETTA CON CONTROLLO ASSENZE
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// In AdminStylistSelectionPage, sostituisci la funzione _loadAvailableStylists
+// (circa riga 2321) con questa versione aggiornata
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// HELPER FUNCTIONS - Aggiungi queste alla classe se non ci sono già
+  String _formatTimeForComparison(String timeStr) {
+    try {
+      String cleanTime = timeStr.split('.').first;
+      if (cleanTime.length > 8) {
+        cleanTime = cleanTime.substring(0, 8);
+      }
+      return cleanTime.substring(0, 5); // Ritorna solo HH:MM
+    } catch (e) {
+      return timeStr;
+    }
+  }
+
+  bool _isStylistInAssenza(
+      Map<String, dynamic> assenza,
+      String dateString,
+      String slotStartTime,
+      String slotEndTime
+      ) {
+    final tipo = assenza['tipo'] as String;
+    final dataInizio = assenza['data_inizio'] as String?;
+    final dataFine = assenza['data_fine'] as String?;
+
+    // Controlla se la data è nel range dell'assenza
+    bool isDateInRange = false;
+
+    if (dataFine == null) {
+      // Assenza di un solo giorno
+      isDateInRange = dataInizio == dateString;
+    } else {
+      // Assenza con range di date
+      isDateInRange = dateString.compareTo(dataInizio!) >= 0 &&
+          dateString.compareTo(dataFine) <= 0;
+    }
+
+    if (!isDateInRange) {
+      return false; // La data non è nel range dell'assenza
+    }
+
+    // Se è permesso ore, controlla anche gli orari
+    if (tipo == 'permesso_ore') {
+      final oraInizio = assenza['ora_inizio'] as String?;
+      final oraFine = assenza['ora_fine'] as String?;
+
+      if (oraInizio != null && oraFine != null) {
+        String assenzaStart = _formatTimeForComparison(oraInizio);
+        String assenzaEnd = _formatTimeForComparison(oraFine);
+
+        return _timeOverlaps(slotStartTime, slotEndTime, assenzaStart, assenzaEnd);
+      }
+    }
+
+    // Per ferie, malattia, permesso_giorno: stylist non disponibile per l'intera giornata
+    if (tipo == 'ferie' || tipo == 'malattia' || tipo == 'permesso_giorno') {
+      return true;
+    }
+
+    return false;
+  }
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// FUNZIONE PRINCIPALE CORRETTA
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
   Future<void> _loadAvailableStylists() async {
     setState(() => _isLoading = true);
 
@@ -2330,18 +2401,23 @@ class _AdminStylistSelectionPageState extends State<AdminStylistSelectionPage> {
       final endDateTime = startDateTime.add(widget.totalDuration);
       final endTime = '${endDateTime.hour.toString().padLeft(2, '0')}:${endDateTime.minute.toString().padLeft(2, '0')}';
 
+      print('🔍 Caricamento stylist disponibili per ${widget.selectedTimeSlot} - $endTime');
+
+      // 1️⃣ Carica tutti gli stylist del sesso giusto
       final allStylistsResponse = await supabase
           .from('STYLIST')
           .select('''
-            id,
-            descrizione,
-            STYLIST_SESSO_TAGLIO!inner(sesso_id)
-          ''')
+          id,
+          descrizione,
+          STYLIST_SESSO_TAGLIO!inner(sesso_id)
+        ''')
           .eq('STYLIST_SESSO_TAGLIO.sesso_id', sessoId)
           .isFilter('deleted_at', null);
 
       List<Map<String, dynamic>> allStylists = List<Map<String, dynamic>>.from(allStylistsResponse);
+      print('📋 Stylist totali: ${allStylists.length}');
 
+      // 2️⃣ Controlla appuntamenti esistenti
       final appointmentsResponse = await supabase
           .from('APPUNTAMENTI')
           .select('stylist_id, ora_inizio, ora_fine')
@@ -2349,17 +2425,44 @@ class _AdminStylistSelectionPageState extends State<AdminStylistSelectionPage> {
 
       Set<int> busyStylistIds = {};
       for (var appointment in appointmentsResponse) {
-        final appoStart = appointment['ora_inizio'] as String;
-        final appoEnd = appointment['ora_fine'] as String;
+        final appoStart = _formatTimeForComparison(appointment['ora_inizio'] as String);
+        final appoEnd = _formatTimeForComparison(appointment['ora_fine'] as String);
 
         if (_timeOverlaps(widget.selectedTimeSlot, endTime, appoStart, appoEnd)) {
           busyStylistIds.add(appointment['stylist_id'] as int);
+          print('⚠️ Stylist ${appointment['stylist_id']} occupato con appuntamento ${appoStart}-${appoEnd}');
         }
       }
 
+      // 3️⃣ NUOVO: Controlla assenze stylist
+      final assenzeResponse = await supabase
+          .from('STYLIST_ASSENZE')
+          .select('stylist_id, tipo, data_inizio, data_fine, ora_inizio, ora_fine')
+          .eq('stato', 'approvato');
+
+      print('🔍 Assenze totali da controllare: ${assenzeResponse.length}');
+
+      Set<int> absentStylistIds = {};
+      for (var assenza in assenzeResponse) {
+        int stylistId = assenza['stylist_id'];
+
+        // Controlla se lo stylist è in assenza per questa data/orario
+        if (_isStylistInAssenza(assenza, dateString, widget.selectedTimeSlot, endTime)) {
+          absentStylistIds.add(stylistId);
+          print('⚠️ Stylist $stylistId in assenza (${assenza['tipo']})');
+        }
+      }
+
+      // 4️⃣ Filtra stylist disponibili (né occupati né assenti)
+      Set<int> unavailableStylistIds = {...busyStylistIds, ...absentStylistIds};
+
       List<Map<String, dynamic>> availableStylists = allStylists
-          .where((stylist) => !busyStylistIds.contains(stylist['id']))
+          .where((stylist) => !unavailableStylistIds.contains(stylist['id']))
           .toList();
+
+      print('✅ Stylist disponibili: ${availableStylists.length}');
+      print('   - Occupati con appuntamenti: ${busyStylistIds.length}');
+      print('   - In assenza: ${absentStylistIds.length}');
 
       setState(() {
         _availableStylists = availableStylists;
@@ -2751,6 +2854,46 @@ class AdminBookingConfirmationPage extends StatefulWidget {
 class _AdminBookingConfirmationPageState extends State<AdminBookingConfirmationPage> {
   bool _isBooking = false;
 
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 🔒 FUNZIONE _confirmBooking CON CONTROLLI CORRETTI
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Sostituisci la funzione _confirmBooking esistente (circa riga 2754)
+// con questa versione aggiornata
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// Helper functions - AGGIUNGI QUESTE ALLA CLASSE _AdminBookingConfirmationPageState
+  DateTime _parseTime(String time) {
+    final parts = time.split(':');
+    final hour = int.parse(parts[0]);
+    final minute = int.parse(parts[1]);
+    return DateTime(2000, 1, 1, hour, minute);
+  }
+
+  bool _timeOverlaps(String start1, String end1, String start2, String end2) {
+    final s1 = _parseTime(start1);
+    final e1 = _parseTime(end1);
+    final s2 = _parseTime(start2);
+    final e2 = _parseTime(end2);
+
+    return s1.isBefore(e2) && s2.isBefore(e1);
+  }
+
+  String _formatTimeForComparison(String timeStr) {
+    try {
+      String cleanTime = timeStr.split('.').first;
+      if (cleanTime.length > 8) {
+        cleanTime = cleanTime.substring(0, 8);
+      }
+      return cleanTime.substring(0, 5); // Ritorna solo HH:MM
+    } catch (e) {
+      return timeStr;
+    }
+  }
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// FUNZIONE PRINCIPALE
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
   Future<void> _confirmBooking() async {
     setState(() => _isBooking = true);
 
@@ -2764,22 +2907,171 @@ class _AdminBookingConfirmationPageState extends State<AdminBookingConfirmationP
 
       print('🔍 Inizio creazione appuntamento admin...');
 
-      // ✅ GESTIONE UTENTE: Controlla se è esistente o nuovo
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      // 🔒 CONTROLLI DI VALIDAZIONE (esattamente come datetime_selection_page)
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+      final dateString = '${widget.selectedDate.year}-${widget.selectedDate.month.toString().padLeft(2, '0')}-${widget.selectedDate.day.toString().padLeft(2, '0')}';
+      final dayOfWeek = widget.selectedDate.weekday;
+
+      print('🔍 STEP 1: Controllo eccezioni (chiusure straordinarie)...');
+
+      // 1️⃣ CONTROLLO ECCEZIONI (PRIORITÀ MASSIMA)
+      final eccezioniResponse = await supabase
+          .from('orari_eccezioni')
+          .select()
+          .eq('data', dateString)
+          .maybeSingle();
+
+      if (eccezioniResponse != null && eccezioniResponse['tipo'] == 'chiuso') {
+        final motivo = eccezioniResponse['motivo'] ?? 'Chiusura straordinaria';
+        throw Exception('Il salone è chiuso il ${_formatDate(widget.selectedDate)}: $motivo');
+      }
+
+      print('✅ Nessuna chiusura eccezionale');
+
+      // 2️⃣ CONTROLLO ORARIO STANDARD (se non ci sono eccezioni)
+      print('🔍 STEP 2: Controllo orario standard...');
+
+      final orarioStandardResponse = await supabase
+          .from('orari_settimanali')
+          .select()
+          .eq('giorno_settimana', dayOfWeek)
+          .maybeSingle();
+
+      if (orarioStandardResponse == null || orarioStandardResponse['aperto'] == false) {
+        throw Exception('Il salone è chiuso di ${_getWeekdayName(dayOfWeek)}.');
+      }
+
+      // Verifica che l'orario selezionato rientri negli orari di apertura
+      final selectedTime = widget.selectedTimeSlot;
+      final startDateTime = DateTime.parse('${dateString} ${selectedTime}:00');
+      final endDateTime = startDateTime.add(widget.totalDuration);
+      final endTime = '${endDateTime.hour.toString().padLeft(2, '0')}:${endDateTime.minute.toString().padLeft(2, '0')}';
+
+      // Controlla se l'appuntamento rientra negli orari di apertura
+      bool isInOpeningHours = false;
+
+      // Controlla mattina
+      if (orarioStandardResponse['orario_apertura_mattina'] != null) {
+        final mattOpen = _formatTimeForComparison(orarioStandardResponse['orario_apertura_mattina']);
+        final mattClose = _formatTimeForComparison(orarioStandardResponse['orario_chiusura_mattina']);
+
+        if (_parseTime(selectedTime).isAfter(_parseTime(mattOpen).subtract(const Duration(minutes: 1))) &&
+            _parseTime(endTime).isBefore(_parseTime(mattClose).add(const Duration(minutes: 1)))) {
+          isInOpeningHours = true;
+        }
+      }
+
+      // Controlla pomeriggio
+      if (!isInOpeningHours && orarioStandardResponse['orario_apertura_pomeriggio'] != null) {
+        final pomOpen = _formatTimeForComparison(orarioStandardResponse['orario_apertura_pomeriggio']);
+        final pomClose = _formatTimeForComparison(orarioStandardResponse['orario_chiusura_pomeriggio']);
+
+        if (_parseTime(selectedTime).isAfter(_parseTime(pomOpen).subtract(const Duration(minutes: 1))) &&
+            _parseTime(endTime).isBefore(_parseTime(pomClose).add(const Duration(minutes: 1)))) {
+          isInOpeningHours = true;
+        }
+      }
+
+      if (!isInOpeningHours) {
+        throw Exception('L\'orario selezionato non rientra negli orari di apertura del salone.');
+      }
+
+      print('✅ Orario valido');
+
+      // 3️⃣ CONTROLLO ASSENZE STYLIST
+      print('🔍 STEP 3: Controllo assenze stylist...');
+
+      final assenzeResponse = await supabase
+          .from('STYLIST_ASSENZE')
+          .select()
+          .eq('stylist_id', widget.selectedStylist['id'])
+          .eq('stato', 'approvato');
+
+      for (var assenza in assenzeResponse) {
+        final tipo = assenza['tipo'] as String;
+        final dataInizio = assenza['data_inizio'] as String?;
+        final dataFine = assenza['data_fine'] as String?;
+
+        // Controlla se la data è nel range dell'assenza
+        bool isDateInRange = false;
+
+        if (dataFine == null) {
+          isDateInRange = dataInizio == dateString;
+        } else {
+          isDateInRange = dateString.compareTo(dataInizio!) >= 0 &&
+              dateString.compareTo(dataFine) <= 0;
+        }
+
+        if (!isDateInRange) continue;
+
+        // Se è permesso ore, controlla anche gli orari
+        if (tipo == 'permesso_ore') {
+          final oraInizio = assenza['ora_inizio'] as String?;
+          final oraFine = assenza['ora_fine'] as String?;
+
+          if (oraInizio != null && oraFine != null) {
+            String assenzaStart = _formatTimeForComparison(oraInizio);
+            String assenzaEnd = _formatTimeForComparison(oraFine);
+
+            if (_timeOverlaps(selectedTime, endTime, assenzaStart, assenzaEnd)) {
+              final motivo = assenza['motivo'] ?? 'Non disponibile';
+              throw Exception('${widget.selectedStylist['descrizione']} non è disponibile in questo orario: $motivo');
+            }
+          }
+        }
+
+        // Per ferie, malattia, permesso_giorno: stylist non disponibile per l'intera giornata
+        if (tipo == 'ferie' || tipo == 'malattia' || tipo == 'permesso_giorno') {
+          final motivo = assenza['motivo'] ?? 'Assente';
+          throw Exception('${widget.selectedStylist['descrizione']} non è disponibile il ${_formatDate(widget.selectedDate)}: $motivo');
+        }
+      }
+
+      print('✅ Stylist disponibile (no assenze)');
+
+      // 4️⃣ CONTROLLO SOVRAPPOSIZIONI CON ALTRI APPUNTAMENTI
+      print('🔍 STEP 4: Controllo sovrapposizioni appuntamenti...');
+
+      final startTime = '${widget.selectedTimeSlot}:00';
+      final endTimeWithSeconds = '${endTime}:00';
+
+      final overlappingAppointments = await supabase
+          .from('APPUNTAMENTI')
+          .select('ora_inizio, ora_fine')
+          .eq('stylist_id', widget.selectedStylist['id'])
+          .eq('data', dateString);
+
+      for (var apt in overlappingAppointments) {
+        final aptStart = _formatTimeForComparison(apt['ora_inizio'] as String);
+        final aptEnd = _formatTimeForComparison(apt['ora_fine'] as String);
+
+        if (_timeOverlaps(selectedTime, endTime, aptStart, aptEnd)) {
+          throw Exception('${widget.selectedStylist['descrizione']} ha già un appuntamento in questo orario (${aptStart} - ${aptEnd}). Scegli un altro orario o stylist.');
+        }
+      }
+
+      print('✅ Nessuna sovrapposizione');
+
+      print('✅ TUTTI I CONTROLLI SUPERATI! Procedo con la creazione...');
+
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      // 📝 CREAZIONE APPUNTAMENTO (solo se tutti i controlli passano)
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+      // ✅ GESTIONE UTENTE
       String clientUserId;
 
-      // Se l'utente è stato selezionato dalla ricerca, usa il suo ID
       if (widget.clientData['is_existing_user'] == true) {
         clientUserId = widget.clientData['id'].toString();
         print('✅ Uso utente esistente con ID: $clientUserId');
       } else {
-        // Altrimenti, crea un nuovo utente
-        // Ma prima controlla se esiste già uno con stessa email/telefono per sicurezza
         final clientEmail = widget.clientData['email']?.toString().trim() ?? '';
         final clientPhone = widget.clientData['telefono']?.toString().trim() ?? '';
 
         String? existingUserId;
 
-        // Cerca per email se fornita
         if (clientEmail.isNotEmpty) {
           final existingUserByEmail = await supabase
               .from('USERS')
@@ -2793,7 +3085,6 @@ class _AdminBookingConfirmationPageState extends State<AdminBookingConfirmationP
           }
         }
 
-        // Se non trovato per email, cerca per telefono
         if (existingUserId == null && clientPhone.isNotEmpty) {
           final existingUserByPhone = await supabase
               .from('USERS')
@@ -2807,12 +3098,10 @@ class _AdminBookingConfirmationPageState extends State<AdminBookingConfirmationP
           }
         }
 
-        // Se trovato un utente esistente, usa quello
         if (existingUserId != null) {
           clientUserId = existingUserId;
           print('✅ Uso utente esistente trovato: $clientUserId');
         } else {
-          // Crea nuovo utente solo se non esiste
           final fakeUid = 'admin_client_${DateTime.now().millisecondsSinceEpoch}_${widget.clientData['nome']}_${widget.clientData['cognome']}'.toLowerCase().replaceAll(' ', '_');
 
           final clientUserData = {
@@ -2840,19 +3129,14 @@ class _AdminBookingConfirmationPageState extends State<AdminBookingConfirmationP
         }
       }
 
-      // 2. CALCOLA ORARI
-      final startDateTime = DateTime.parse(
-          '${widget.selectedDate.year}-${widget.selectedDate.month.toString().padLeft(2, '0')}-${widget.selectedDate.day.toString().padLeft(2, '0')} ${widget.selectedTimeSlot}:00'
-      );
-      final endDateTime = startDateTime.add(widget.totalDuration);
+      // CREA APPUNTAMENTO
       final durationString = '${widget.totalDuration.inHours.toString().padLeft(2, '0')}:${widget.totalDuration.inMinutes.remainder(60).toString().padLeft(2, '0')}:00';
 
-      // 3. CREA APPUNTAMENTO
       final appointmentData = {
         'user_id': int.parse(clientUserId),
-        'data': '${widget.selectedDate.year}-${widget.selectedDate.month.toString().padLeft(2, '0')}-${widget.selectedDate.day.toString().padLeft(2, '0')}',
-        'ora_inizio': '${widget.selectedTimeSlot}:00',
-        'ora_fine': '${endDateTime.hour.toString().padLeft(2, '0')}:${endDateTime.minute.toString().padLeft(2, '0')}:00',
+        'data': dateString,
+        'ora_inizio': startTime,
+        'ora_fine': endTimeWithSeconds,
         'durata_totale': durationString,
         'stylist_id': widget.selectedStylist['id'],
         'prezzo_totale': widget.totalPrice,
@@ -2872,6 +3156,7 @@ class _AdminBookingConfirmationPageState extends State<AdminBookingConfirmationP
 
       final appointmentId = appointmentResponse['id'];
       print('✅ Appuntamento creato con ID: $appointmentId');
+
       try {
         await AppointmentNotificationService.scheduleAppointmentReminder(
           appointmentId: appointmentId,
@@ -2889,7 +3174,7 @@ class _AdminBookingConfirmationPageState extends State<AdminBookingConfirmationP
         print('⚠️ Errore programmazione notifica (non critico): $e');
       }
 
-      // 4. INSERISCI I SERVIZI ASSOCIATI
+      // INSERISCI SERVIZI
       for (final service in widget.selectedServices) {
         final serviceData = {
           'appuntamento_id': appointmentId,
@@ -2901,7 +3186,7 @@ class _AdminBookingConfirmationPageState extends State<AdminBookingConfirmationP
         print('✅ Servizio aggiunto: ${service['descrizione']}');
       }
 
-      // 5. CREA RECORD PAGAMENTO
+      // CREA PAGAMENTO
       final paymentData = {
         'appuntamento_id': appointmentId,
         'metodo_pagamento': 'in_loco',
@@ -2916,7 +3201,6 @@ class _AdminBookingConfirmationPageState extends State<AdminBookingConfirmationP
 
       print('🎉 Appuntamento admin creato con successo!');
 
-      // Mostra dialog di successo
       if (mounted) {
         _showSuccessDialog();
       }
@@ -2926,9 +3210,15 @@ class _AdminBookingConfirmationPageState extends State<AdminBookingConfirmationP
       setState(() => _isBooking = false);
 
       if (mounted) {
-        _showErrorMessage('Errore durante la creazione dell\'appuntamento: ${e.toString()}');
+        _showErrorMessage('Errore: ${e.toString()}');
       }
     }
+  }
+
+// Helper aggiuntivo se non esiste
+  String _getWeekdayName(int day) {
+    const days = ['', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
+    return days[day];
   }
 
   void _showSuccessDialog() {

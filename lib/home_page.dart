@@ -967,7 +967,7 @@ class _HomePageState extends State<HomePage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Lun-Ven: 8:30 - 20:00',
+                      'Mar-Gio: 9:00 - 13:00, 16:00 - 20:00',
                       style: TextStyle(
                         color: Colors.grey[300],
                         fontSize: 14,
@@ -975,7 +975,7 @@ class _HomePageState extends State<HomePage> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Sabato: 8:30 - 20:00',
+                      'Ven-Sab: 9:00 - 13:00, 16:00 - 19:00',
                       style: TextStyle(
                         color: Colors.grey[300],
                         fontSize: 14,
@@ -983,7 +983,7 @@ class _HomePageState extends State<HomePage> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Domenica: Chiuso',
+                      'Domenica e Lunedì: Chiuso',
                       style: TextStyle(
                         color: Colors.grey[400],
                         fontSize: 14,

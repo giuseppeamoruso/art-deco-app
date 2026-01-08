@@ -14,11 +14,20 @@ class _MyAppointmentsPageState extends State<MyAppointmentsPage> {
   List<Map<String, dynamic>> _appointments = [];
   final firebase_auth.User? user = firebase_auth.FirebaseAuth.instance.currentUser;
 
+  // 🆕 Variabili per gestione storico e filtri
+  bool _showingAllPastAppointments = false;
+  DateTime? _filterStartDate;
+  DateTime? _filterEndDate;
+
   @override
   void initState() {
     super.initState();
     _loadAppointments();
   }
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // 🔥 CARICAMENTO OTTIMIZZATO: FUTURI + ULTIMI 3 PASSATI
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   Future<void> _loadAppointments() async {
     if (user == null) {
@@ -39,9 +48,15 @@ class _MyAppointmentsPageState extends State<MyAppointmentsPage> {
           .single();
 
       final userId = userResponse['id'] as int;
+      final today = DateTime.now().toIso8601String().split('T')[0]; // YYYY-MM-DD
 
-      // Query per ottenere appuntamenti con dettagli stylist e servizi
-      final appointmentsResponse = await supabase
+      print('📅 Data odierna: $today');
+
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      // 🟢 QUERY APPUNTAMENTI FUTURI + OGGI
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+      final futureAppointmentsResponse = await supabase
           .from('APPUNTAMENTI')
           .select('''
             id,
@@ -58,15 +73,55 @@ class _MyAppointmentsPageState extends State<MyAppointmentsPage> {
             )
           ''')
           .eq('user_id', userId)
+          .gte('data', today) // Data >= oggi
           .order('data', ascending: true)
           .order('ora_inizio', ascending: true);
 
+      print('✅ Appuntamenti futuri caricati: ${futureAppointmentsResponse.length}');
+
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      // ⚫ QUERY ULTIMI 3 APPUNTAMENTI PASSATI
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+      final pastAppointmentsResponse = await supabase
+          .from('APPUNTAMENTI')
+          .select('''
+            id,
+            data,
+            ora_inizio,
+            ora_fine,
+            durata_totale,
+            prezzo_totale,
+            note,
+            created_at,
+            STYLIST!inner(descrizione),
+            APPUNTAMENTI_SERVIZI!inner(
+              SERVIZI!inner(descrizione, prezzo, durata)
+            )
+          ''')
+          .eq('user_id', userId)
+          .lt('data', today) // Data < oggi
+          .order('data', ascending: false) // Dal più recente
+          .order('ora_inizio', ascending: false)
+          .limit(3); // Solo ultimi 3
+
+      print('✅ Ultimi 3 appuntamenti passati caricati: ${pastAppointmentsResponse.length}');
+
+      // Combina i risultati
+      final allAppointments = [
+        ...List<Map<String, dynamic>>.from(futureAppointmentsResponse),
+        ...List<Map<String, dynamic>>.from(pastAppointmentsResponse),
+      ];
+
       setState(() {
-        _appointments = List<Map<String, dynamic>>.from(appointmentsResponse);
+        _appointments = allAppointments;
+        _showingAllPastAppointments = false;
+        _filterStartDate = null;
+        _filterEndDate = null;
         _isLoading = false;
       });
 
-      print('✅ Appuntamenti caricati: ${_appointments.length}');
+      print('✅ Totale appuntamenti caricati: ${_appointments.length}');
 
     } catch (e) {
       print('❌ Errore caricamento appuntamenti: $e');
@@ -78,7 +133,156 @@ class _MyAppointmentsPageState extends State<MyAppointmentsPage> {
     }
   }
 
-  String _formatDate(String dateString) {
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // 📜 CARICAMENTO STORICO COMPLETO (con filtro opzionale)
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Future<void> _loadAllPastAppointments({
+    DateTime? startDate,
+    DateTime? endDate,
+  }) async {
+    if (user == null) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      final supabase = Supabase.instance.client;
+
+      final userResponse = await supabase
+          .from('USERS')
+          .select('id')
+          .eq('uid', user!.uid)
+          .single();
+
+      final userId = userResponse['id'] as int;
+      final today = DateTime.now().toIso8601String().split('T')[0];
+
+      print('📜 Caricamento storico completo...');
+      if (startDate != null && endDate != null) {
+        print('🔍 Con filtro: ${startDate.toIso8601String().split('T')[0]} - ${endDate.toIso8601String().split('T')[0]}');
+      }
+
+      // Query base per appuntamenti passati
+      var query = supabase
+          .from('APPUNTAMENTI')
+          .select('''
+            id,
+            data,
+            ora_inizio,
+            ora_fine,
+            durata_totale,
+            prezzo_totale,
+            note,
+            created_at,
+            STYLIST!inner(descrizione),
+            APPUNTAMENTI_SERVIZI!inner(
+              SERVIZI!inner(descrizione, prezzo, durata)
+            )
+          ''')
+          .eq('user_id', userId)
+          .lt('data', today);
+
+      // Applica filtro date se fornito
+      if (startDate != null) {
+        final startDateStr = startDate.toIso8601String().split('T')[0];
+        query = query.gte('data', startDateStr);
+      }
+
+      if (endDate != null) {
+        final endDateStr = endDate.toIso8601String().split('T')[0];
+        query = query.lte('data', endDateStr);
+      }
+
+      final pastResponse = await query
+          .order('data', ascending: false)
+          .order('ora_inizio', ascending: false);
+
+      print('✅ Storico caricato: ${pastResponse.length} appuntamenti');
+
+      // Carica anche appuntamenti futuri
+      final futureResponse = await supabase
+          .from('APPUNTAMENTI')
+          .select('''
+            id,
+            data,
+            ora_inizio,
+            ora_fine,
+            durata_totale,
+            prezzo_totale,
+            note,
+            created_at,
+            STYLIST!inner(descrizione),
+            APPUNTAMENTI_SERVIZI!inner(
+              SERVIZI!inner(descrizione, prezzo, durata)
+            )
+          ''')
+          .eq('user_id', userId)
+          .gte('data', today)
+          .order('data', ascending: true)
+          .order('ora_inizio', ascending: true);
+
+      setState(() {
+        _appointments = [
+          ...List<Map<String, dynamic>>.from(futureResponse),
+          ...List<Map<String, dynamic>>.from(pastResponse),
+        ];
+        _showingAllPastAppointments = true;
+        _filterStartDate = startDate;
+        _filterEndDate = endDate;
+        _isLoading = false;
+      });
+
+    } catch (e) {
+      print('❌ Errore caricamento storico: $e');
+      setState(() => _isLoading = false);
+
+      if (mounted) {
+        _showErrorMessage('Errore nel caricamento dello storico');
+      }
+    }
+  }
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // 🗓️ DIALOG SELEZIONE RANGE DATE
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Future<void> _showDateRangeFilter() async {
+    final DateTimeRange? dateRange = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020), // Anno di inizio attività
+      lastDate: DateTime.now(),
+      initialDateRange: _filterStartDate != null && _filterEndDate != null
+          ? DateTimeRange(start: _filterStartDate!, end: _filterEndDate!)
+          : null,
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.dark().copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: Colors.blue,
+              onPrimary: Colors.white,
+              surface: Color(0xFF2d2d2d),
+              onSurface: Colors.white,
+            ),
+            dialogBackgroundColor: const Color(0xFF2d2d2d),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (dateRange != null) {
+      await _loadAllPastAppointments(
+        startDate: dateRange.start,
+        endDate: dateRange.end,
+      );
+    }
+  }
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // 🎨 HELPER FORMATTING
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  String _formatDate(String dateString, {bool showYear = false}) {
     try {
       final date = DateTime.parse(dateString);
       const months = [
@@ -89,7 +293,15 @@ class _MyAppointmentsPageState extends State<MyAppointmentsPage> {
         '', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'
       ];
 
-      return '${weekdays[date.weekday]} ${date.day} ${months[date.month]}';
+      // Se showYear è true O se l'anno è diverso dall'anno corrente
+      final currentYear = DateTime.now().year;
+      final shouldShowYear = showYear || date.year != currentYear;
+
+      if (shouldShowYear) {
+        return '${weekdays[date.weekday]} ${date.day} ${months[date.month]} ${date.year}';
+      } else {
+        return '${weekdays[date.weekday]} ${date.day} ${months[date.month]}';
+      }
     } catch (e) {
       return dateString;
     }
@@ -148,6 +360,10 @@ class _MyAppointmentsPageState extends State<MyAppointmentsPage> {
     }
   }
 
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // 📋 MODAL DETTAGLI APPUNTAMENTO
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
   void _showAppointmentDetails(Map<String, dynamic> appointment) {
     final services = appointment['APPUNTAMENTI_SERVIZI'] as List;
 
@@ -180,15 +396,15 @@ class _MyAppointmentsPageState extends State<MyAppointmentsPage> {
             // Header
             Container(
               padding: const EdgeInsets.all(20),
-              child: Row(
+              child: const Row(
                 children: [
                   Icon(
                     Icons.event,
                     color: Colors.blue,
                     size: 24,
                   ),
-                  const SizedBox(width: 12),
-                  const Text(
+                  SizedBox(width: 12),
+                  Text(
                     'Dettagli Appuntamento',
                     style: TextStyle(
                       color: Colors.white,
@@ -350,6 +566,10 @@ class _MyAppointmentsPageState extends State<MyAppointmentsPage> {
     );
   }
 
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // 🎨 BUILD WIDGET PRINCIPALE
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -388,6 +608,10 @@ class _MyAppointmentsPageState extends State<MyAppointmentsPage> {
       ),
     );
   }
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // 📭 EMPTY STATE
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   Widget _buildEmptyState() {
     return Center(
@@ -432,6 +656,10 @@ class _MyAppointmentsPageState extends State<MyAppointmentsPage> {
     );
   }
 
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // 📋 LISTA APPUNTAMENTI
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
   Widget _buildAppointmentsList() {
     // Raggruppa appuntamenti per stato (futuri, oggi, passati)
     final now = DateTime.now();
@@ -473,12 +701,115 @@ class _MyAppointmentsPageState extends State<MyAppointmentsPage> {
 
         // Appuntamenti passati
         if (pastAppointments.isNotEmpty) ...[
-          _buildSectionHeader('Completati', Colors.grey, pastAppointments.length),
+          // 🆕 HEADER CON CONTROLLI
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _buildSectionHeader('Completati', Colors.grey, pastAppointments.length),
+
+              // 🆕 BOTTONI GESTIONE STORICO
+              if (!_showingAllPastAppointments)
+              // Bottone "Vedi tutto"
+                TextButton.icon(
+                  onPressed: () => _loadAllPastAppointments(),
+                  icon: const Icon(Icons.history, size: 16),
+                  label: const Text('Vedi tutto'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.blue,
+                  ),
+                )
+              else
+              // Bottoni quando storico è aperto
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Bottone filtro
+                    IconButton(
+                      onPressed: _showDateRangeFilter,
+                      icon: Icon(
+                        Icons.filter_alt,
+                        color: _filterStartDate != null ? Colors.blue : Colors.grey,
+                        size: 20,
+                      ),
+                      tooltip: 'Filtra per date',
+                    ),
+
+                    // Bottone reset filtro
+                    if (_filterStartDate != null)
+                      IconButton(
+                        onPressed: () {
+                          setState(() {
+                            _filterStartDate = null;
+                            _filterEndDate = null;
+                          });
+                          _loadAllPastAppointments();
+                        },
+                        icon: const Icon(Icons.clear, color: Colors.red, size: 20),
+                        tooltip: 'Rimuovi filtro',
+                      ),
+
+                    // Bottone chiudi storico
+                    TextButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          _showingAllPastAppointments = false;
+                          _filterStartDate = null;
+                          _filterEndDate = null;
+                        });
+                        _loadAppointments(); // Ricarica solo ultimi 3
+                      },
+                      icon: const Icon(Icons.close, size: 16),
+                      label: const Text('Chiudi'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+
+          // 🆕 INFO FILTRO ATTIVO
+          if (_filterStartDate != null && _filterEndDate != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12, top: 4),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: Colors.blue.withOpacity(0.3),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.info_outline, color: Colors.blue, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Filtro attivo: ${_formatDate(_filterStartDate!.toIso8601String())} - ${_formatDate(_filterEndDate!.toIso8601String())}',
+                        style: const TextStyle(
+                          color: Colors.blue,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // Lista appuntamenti passati
           ...pastAppointments.map((appointment) => _buildAppointmentCard(appointment)),
         ],
       ],
     );
   }
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // 🏷️ SECTION HEADER
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   Widget _buildSectionHeader(String title, Color color, int count) {
     return Padding(
@@ -513,12 +844,16 @@ class _MyAppointmentsPageState extends State<MyAppointmentsPage> {
     );
   }
 
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // 📇 APPOINTMENT CARD
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
   Widget _buildAppointmentCard(Map<String, dynamic> appointment) {
     final appointmentDate = DateTime.parse(appointment['data']);
     final statusColor = _getStatusColor(appointmentDate);
     final statusText = _getStatusText(appointmentDate);
     final services = appointment['APPUNTAMENTI_SERVIZI'] as List;
-
+    final isPast = appointmentDate.isBefore(DateTime.now());
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       child: Card(
@@ -543,7 +878,7 @@ class _MyAppointmentsPageState extends State<MyAppointmentsPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          _formatDate(appointment['data']),
+                          _formatDate(appointment['data'], showYear: isPast),
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 18,
