@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>CLIENT_ID</key>
-	<string>1025005736352-g9bc0uddu4jch9jhicrqpb076089l487.apps.googleusercontent.com</string>
+	<string>1025005736352-cfsp5pr0ctmutgki3d0p3dv96c4s7bv7.apps.googleusercontent.com</string>
 	<key>REVERSED_CLIENT_ID</key>
-	<string>com.googleusercontent.apps.1025005736352-g9bc0uddu4jch9jhicrqpb076089l487</string>
+	<string>com.googleusercontent.apps.1025005736352-cfsp5pr0ctmutgki3d0p3dv96c4s7bv7</string>
 	<key>ANDROID_CLIENT_ID</key>
 	<string>1025005736352-cdngvqiq1r3f1a5h005onejor8a8t7v2.apps.googleusercontent.com</string>
 	<key>API_KEY</key>
@@ -15,7 +15,7 @@
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
-	<string>com.example.barberShop</string>
+	<string>com.artdeco.parrucchieri</string>
 	<key>PROJECT_ID</key>
 	<string>barber-35eca</string>
 	<key>STORAGE_BUCKET</key>
@@ -31,6 +31,6 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:1025005736352:ios:14705865c54eed022954c5</string>
+	<string>1:1025005736352:ios:a5f32799f47591532954c5</string>
 </dict>
 </plist>
