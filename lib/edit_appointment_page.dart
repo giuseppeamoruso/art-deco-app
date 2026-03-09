@@ -112,7 +112,7 @@ class _EditAppointmentPageState extends State<EditAppointmentPage> with SingleTi
           .select('*')
           .eq('sesso_id', sessoId)
           .isFilter('deleted_at', null)
-          .order('descrizione');
+          .order('ordine');
 
       setState(() {
         _availableServices = List<Map<String, dynamic>>.from(response);

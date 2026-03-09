@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'dart:io'; // ✅ AGGIUNGI QUESTO IMPORT
+import 'dart:io';
 import 'home_page.dart';
 import 'admin_dashboard_page.dart';
 import 'onesignal_push_service.dart';
@@ -43,7 +43,7 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
-  // 🔥 Sincronizza utente con Supabase - VERSIONE CORRETTA
+  // 🔥 Sincronizza utente con Supabase
   Future<void> syncUserWithSupabase({
     String? nome,
     String? cognome,
@@ -88,7 +88,7 @@ class _LoginPageState extends State<LoginPage> {
         'created_at': DateTime.now().toIso8601String(),
         'codice_fiscale': null,
         'password': null,
-        'role': 'user', // Default user
+        'role': 'user',
       };
 
       print('📝 Dati da inserire: $userData');
@@ -114,11 +114,97 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
+  // ✅ NUOVO: Controlla se l'utente è bannato (segnalazione livello 2)
+  Future<bool> _checkIfBanned(String firebaseUid) async {
+    try {
+      final supabase = Supabase.instance.client;
+
+      // Recupera user_id
+      final userResponse = await supabase
+          .from('USERS')
+          .select('id')
+          .eq('uid', firebaseUid)
+          .single();
+
+      final userId = userResponse['id'];
+
+      // Controlla segnalazioni attive
+      final segnalazioniResponse = await supabase
+          .from('USERS_SEGNALAZIONI')
+          .select('segnalazione_id')
+          .eq('users_id', userId)
+          .isFilter('deleted_at', null);
+
+      List<Map<String, dynamic>> segnalazioni =
+      List<Map<String, dynamic>>.from(segnalazioniResponse);
+
+      // Controlla se ha segnalazione livello 2 (account bloccato)
+      final isBanned = segnalazioni.any((s) => s['segnalazione_id'] == 2);
+
+      if (isBanned) {
+        print('🚫 Account bloccato - Livello 2');
+      }
+
+      return isBanned;
+    } catch (e) {
+      print('⚠️ Errore controllo ban: $e');
+      return false; // In caso di errore, non bloccare l'accesso
+    }
+  }
+
+  // ✅ NUOVO: Mostra dialog account bloccato
+  void _showBannedDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF2d2d2d),
+        title: Row(
+          children: [
+            const Icon(Icons.block, color: Colors.red, size: 32),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Account Bloccato',
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+        content: const Text(
+          'Il tuo account è stato bloccato dall\'amministratore.\n\n'
+              'Per maggiori informazioni, contatta il negozio direttamente.',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
   // 🔹 Controlla ruolo e naviga di conseguenza
   Future<void> _checkUserRoleAndNavigate() async {
     try {
       final user = firebase_auth.FirebaseAuth.instance.currentUser;
       if (user == null) return;
+
+      // ✅ CONTROLLO BAN PRIMA DI TUTTO
+      final isBanned = await _checkIfBanned(user.uid);
+
+      if (isBanned) {
+        // Logout immediato
+        await firebase_auth.FirebaseAuth.instance.signOut();
+
+        if (mounted) {
+          setState(() => _isLoading = false);
+          _showBannedDialog();
+        }
+        return;
+      }
 
       final supabase = Supabase.instance.client;
       final response = await supabase
@@ -134,16 +220,18 @@ class _LoginPageState extends State<LoginPage> {
 
       final userRole = response['role']?.toString().toLowerCase() ?? 'user';
 
+      // ✅ Registra su OneSignal
+      await OneSignalPushService.loginUser(user.uid);
+      print('✅ OneSignal login completato');
+
       if (mounted) {
         if (userRole == 'admin') {
-          // Naviga alla dashboard admin
           _showSuccessMessage('Benvenuto Admin ${response['nome'] ?? ''}!');
           Navigator.of(context).pushAndRemoveUntil(
             MaterialPageRoute(builder: (context) => const AdminDashboardPage()),
                 (route) => false,
           );
         } else {
-          // Naviga alla home utente normale
           _showSuccessMessage('✅ Accesso effettuato con successo!');
           Navigator.of(context).pushAndRemoveUntil(
             MaterialPageRoute(builder: (context) => const HomePage()),
@@ -154,7 +242,6 @@ class _LoginPageState extends State<LoginPage> {
 
     } catch (e) {
       print('Errore controllo ruolo: $e');
-      // In caso di errore, naviga comunque alla home normale
       if (mounted) {
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (context) => const HomePage()),
@@ -164,19 +251,18 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  // 🔹 Login con Google - ✅ MULTI-PIATTAFORMA (iOS + Android)
+  // 🔹 Login con Google
   Future<void> signInWithGoogle() async {
     setState(() => _isLoading = true);
 
     try {
       print('📱 Piattaforma: ${Platform.isIOS ? "iOS" : "Android"}');
 
-      // ✅ Configura GoogleSignIn in base alla piattaforma
       final GoogleSignIn googleSignIn = Platform.isIOS
           ? GoogleSignIn(
         clientId: '1025005736352-g9bc0uddu4jch9jhicrqpb076089l487.apps.googleusercontent.com',
       )
-          : GoogleSignIn(); // Android usa google-services.json
+          : GoogleSignIn();
 
       final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
 
@@ -204,7 +290,7 @@ class _LoginPageState extends State<LoginPage> {
       print('✅ Accesso Firebase completato: ${userCredential.user?.uid}');
 
       if (userCredential.user != null) {
-        // Sincronizza con Supabase passando i dati Google
+        // Sincronizza con Supabase
         await syncUserWithSupabase(
           nome: googleUser.displayName?.split(' ').first,
           cognome: googleUser.displayName != null && googleUser.displayName!.split(' ').length > 1
@@ -213,14 +299,12 @@ class _LoginPageState extends State<LoginPage> {
           email: googleUser.email,
           telefono: null,
         );
-        await OneSignalPushService.loginUser(userCredential.user!.uid);
 
-        // Controlla ruolo e naviga
+        // ✅ Controlla ban e naviga
         await _checkUserRoleAndNavigate();
       }
     } catch (e) {
       print('❌ Errore Google Sign-In: $e');
-      print('❌ Stack trace: ${e.toString()}');
       if (mounted) {
         _showErrorMessage('❌ Errore durante il login con Google: ${e.toString()}');
       }
@@ -244,7 +328,7 @@ class _LoginPageState extends State<LoginPage> {
       );
 
       if (userCredential.user != null) {
-        // Controlla ruolo e naviga
+        // ✅ Controlla ban e naviga
         await _checkUserRoleAndNavigate();
       }
     } on firebase_auth.FirebaseAuthException catch (e) {
@@ -282,7 +366,7 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  // 📝 Registrazione con email - VERSIONE CORRETTA
+  // 📝 Registrazione con email
   Future<void> registerWithEmail() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -291,7 +375,6 @@ class _LoginPageState extends State<LoginPage> {
     try {
       print('📝 Inizio registrazione...');
 
-      // 1. Crea l'utente in Firebase Auth
       final userCredential = await firebase_auth.FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text,
@@ -300,14 +383,12 @@ class _LoginPageState extends State<LoginPage> {
       print('✅ Utente creato in Firebase: ${userCredential.user?.uid}');
 
       if (userCredential.user != null) {
-        // 2. Aggiorna il display name in Firebase
         await userCredential.user!.updateDisplayName(
           '${_nomeController.text.trim()} ${_cognomeController.text.trim()}',
         );
 
         print('✅ Display name aggiornato');
 
-        // 3. Sincronizza con Supabase CON I DATI DEL FORM
         await syncUserWithSupabase(
           nome: _nomeController.text.trim(),
           cognome: _cognomeController.text.trim(),
@@ -315,9 +396,11 @@ class _LoginPageState extends State<LoginPage> {
           email: _emailController.text.trim(),
         );
 
+        // ✅ Registra su OneSignal
+        await OneSignalPushService.loginUser(userCredential.user!.uid);
+
         if (mounted) {
           _showSuccessMessage('✅ Registrazione completata con successo!');
-          // Dopo la registrazione, naviga sempre alla home utente (nuovi utenti sono sempre 'user')
           Navigator.of(context).pushAndRemoveUntil(
             MaterialPageRoute(builder: (context) => const HomePage()),
                 (route) => false,

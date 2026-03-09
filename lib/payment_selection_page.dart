@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'appointment_notification_service.dart';
 import 'stripe_payment_page.dart';
+import 'unicredit_payment_page.dart';
 import 'home_page.dart';
 
 class PaymentSelectionPage extends StatefulWidget {
@@ -31,6 +32,60 @@ class PaymentSelectionPage extends StatefulWidget {
 
 class _PaymentSelectionPageState extends State<PaymentSelectionPage> {
   bool _isBooking = false;
+  bool _isLoading = true;
+  bool _isBloccatoPagamentoLoco = false; // ✅ NUOVO
+
+  @override
+  void initState() {
+    super.initState();
+    _checkSegnalazioni(); // ✅ NUOVO
+  }
+
+  // ✅ NUOVA FUNZIONE: Controlla se l'utente è segnalato
+  Future<void> _checkSegnalazioni() async {
+    try {
+      final user = firebase_auth.FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      // Recupera user_id
+      final userResponse = await Supabase.instance.client
+          .from('USERS')
+          .select('id')
+          .eq('uid', user.uid)
+          .single();
+
+      final userId = userResponse['id'];
+
+      // Controlla segnalazioni attive
+      final response = await Supabase.instance.client
+          .from('USERS_SEGNALAZIONI')
+          .select('segnalazione_id')
+          .eq('users_id', userId)
+          .isFilter('deleted_at', null);
+
+      List<Map<String, dynamic>> segnalazioni = List<Map<String, dynamic>>.from(response);
+
+      // Se ha segnalazione livello 1 o 2, blocca pagamento in loco
+      final bloccato = segnalazioni.any((s) =>
+      s['segnalazione_id'] == 1 || s['segnalazione_id'] == 2
+      );
+
+      setState(() {
+        _isBloccatoPagamentoLoco = bloccato;
+        _isLoading = false;
+      });
+
+      if (bloccato) {
+        print('⚠️ Utente segnalato - Pagamento in loco bloccato');
+      }
+    } catch (e) {
+      print('Errore controllo segnalazioni: $e');
+      setState(() => _isLoading = false);
+    }
+  }
 
   Future<int> _createAppointment() async {
     final supabase = Supabase.instance.client;
@@ -99,7 +154,7 @@ class _PaymentSelectionPageState extends State<PaymentSelectionPage> {
             .toList(),
       );
 
-      print('🔔 Notifica promemoria programmata');
+      print('📱 Notifica promemoria programmata');
     } catch (e) {
       print('⚠️ Errore programmazione notifica (non critico): $e');
     }
@@ -115,23 +170,32 @@ class _PaymentSelectionPageState extends State<PaymentSelectionPage> {
         .from('APPUNTAMENTI_SERVIZI')
         .insert(servicesData);
 
-    print('✅ ${servicesData.length} servizi collegati all appuntamento');
+    print('✅ ${servicesData.length} servizi collegati all\'appuntamento');
 
-        return appointmentId;
-    }
+    return appointmentId;
+  }
 
-  Future<void> _createPaymentRecord(int appointmentId, String method, String status, String? stripePaymentIntentId) async {
+  Future<void> _createPaymentRecord(int appointmentId, String method, String status, String? paymentId) async {
     final supabase = Supabase.instance.client;
 
-    await supabase
-        .from('PAGAMENTI')
-        .insert({
+    // Prepara i dati base
+    Map<String, dynamic> paymentData = {
       'appuntamento_id': appointmentId,
       'metodo_pagamento': method,
       'stato': status,
       'importo': widget.totalPrice,
-      'stripe_payment_intent_id': stripePaymentIntentId,
-    });
+    };
+
+    // Aggiungi payment ID in base al metodo
+    if (method == 'stripe') {
+      paymentData['stripe_payment_intent_id'] = paymentId;
+    } else if (method == 'unicredit') {
+      paymentData['unicredit_payment_id'] = paymentId;
+    }
+
+    await supabase
+        .from('PAGAMENTI')
+        .insert(paymentData);
 
     print('✅ Record pagamento creato: $method - $status');
   }
@@ -185,6 +249,53 @@ class _PaymentSelectionPageState extends State<PaymentSelectionPage> {
               onPaymentSuccess: (paymentIntentId) async {
                 // Aggiorna record pagamento
                 await _createPaymentRecord(appointmentId, 'stripe', 'completato', paymentIntentId);
+              },
+              onPaymentFailure: () async {
+                // Elimina appuntamento se pagamento fallisce
+                await _cancelAppointment(appointmentId);
+              },
+            ),
+          ),
+        );
+
+        if (result == true) {
+          // Pagamento completato con successo
+          _showSuccessDialog(
+            'Pagamento completato!',
+            'Il tuo appuntamento è stato prenotato e pagato.\nRiceverai conferma via email.',
+          );
+        }
+      }
+
+    } catch (e) {
+      print('❌ Errore durante la prenotazione: $e');
+      if (mounted) {
+        setState(() => _isBooking = false);
+        _showErrorMessage('Errore durante la prenotazione: $e');
+      }
+    }
+  }
+
+  Future<void> _selectPaymentUniCredit() async {
+    setState(() => _isBooking = true);
+
+    try {
+      // Crea appuntamento
+      final appointmentId = await _createAppointment();
+
+      // Naviga a UniCredit con l'ID appuntamento
+      if (mounted) {
+        setState(() => _isBooking = false);
+
+        final result = await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => UniCreditPaymentPage(
+              appointmentId: appointmentId,
+              totalPrice: widget.totalPrice,
+              description: 'Appuntamento ${_formatDate(widget.selectedDate)} alle ${widget.selectedTimeSlot}',
+              onPaymentSuccess: (paymentId) async {
+                // Aggiorna record pagamento
+                await _createPaymentRecord(appointmentId, 'unicredit', 'completato', paymentId);
               },
               onPaymentFailure: () async {
                 // Elimina appuntamento se pagamento fallisce
@@ -299,6 +410,16 @@ class _PaymentSelectionPageState extends State<PaymentSelectionPage> {
 
   @override
   Widget build(BuildContext context) {
+    // ✅ Mostra loading mentre controlla segnalazioni
+    if (_isLoading) {
+      return Scaffold(
+        backgroundColor: const Color(0xFF1a1a1a),
+        body: const Center(
+          child: CircularProgressIndicator(color: Colors.white),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFF1a1a1a),
       appBar: AppBar(
@@ -420,26 +541,67 @@ class _PaymentSelectionPageState extends State<PaymentSelectionPage> {
 
               const SizedBox(height: 24),
 
-              // Opzione Paga in Loco
-              _buildPaymentOption(
-                title: 'Paga in Loco',
-                subtitle: 'Pagamento diretto al salone',
-                description: 'Paga comodamente quando arrivi per l\'appuntamento. Accettiamo contanti e carte.',
-                icon: Icons.store,
-                color: Colors.green,
-                onTap: _isBooking ? null : _selectPaymentInLoco,
-              ),
+              // ✅ OPZIONE PAGA IN LOCO - Condizionale
+              if (!_isBloccatoPagamentoLoco)
+                _buildPaymentOption(
+                  title: 'Paga in Loco',
+                  subtitle: 'Pagamento diretto al salone',
+                  description: 'Paga comodamente quando arrivi per l\'appuntamento. Accettiamo contanti e carte.',
+                  icon: Icons.store,
+                  color: Colors.green,
+                  onTap: _isBooking ? null : _selectPaymentInLoco,
+                )
+              else
+              // ✅ Messaggio se bloccato
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.orange),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.warning, color: Colors.orange, size: 24),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Pagamento in loco non disponibile',
+                              style: TextStyle(
+                                color: Colors.orange,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Il pagamento in loco non è disponibile per il tuo account. Utilizza il pagamento online con carta.',
+                              style: TextStyle(
+                                color: Colors.orange[300],
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
 
               const SizedBox(height: 16),
 
-              // Opzione Paga Ora con Stripe
+              // Opzione Paga Ora con UniCredit
               _buildPaymentOption(
                 title: 'Paga Ora Online',
-                subtitle: 'Pagamento sicuro con Stripe',
+                subtitle: 'Pagamento sicuro con UniCredit',
                 description: 'Paga subito in modo sicuro con carta di credito/debito. Prenotazione garantita.',
-                icon: Icons.payment,
+                icon: Icons.credit_card,
                 color: Colors.blue,
-                onTap: _isBooking ? null : _selectPaymentStripe,
+                onTap: _isBooking ? null : _selectPaymentUniCredit,
                 badge: 'SICURO',
               ),
 
@@ -459,7 +621,7 @@ class _PaymentSelectionPageState extends State<PaymentSelectionPage> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(
+                    const Icon(
                       Icons.info_outline,
                       color: Colors.orange,
                       size: 20,

@@ -133,12 +133,15 @@ class BookingSelectionPage extends StatelessWidget {
                             size: 20,
                           ),
                           const SizedBox(width: 8),
-                          Text(
-                            '4 Stylist professionali a tua disposizione',
-                            style: TextStyle(
-                              color: Colors.grey[300],
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
+                          Flexible(
+                            child: Text(
+                              '4 Stylist professionali a tua disposizione',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Colors.grey[300],
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
                           ),
                         ],

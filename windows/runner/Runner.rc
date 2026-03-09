@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.example" "\0"
-            VALUE "FileDescription", "barber_shop" "\0"
+            VALUE "CompanyName", "com.artdeco" "\0"
+            VALUE "FileDescription", "parrucchieri" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "barber_shop" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2025 com.example. All rights reserved." "\0"
-            VALUE "OriginalFilename", "barber_shop.exe" "\0"
-            VALUE "ProductName", "barber_shop" "\0"
+            VALUE "InternalName", "parrucchieri" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2025 com.artdeco. All rights reserved." "\0"
+            VALUE "OriginalFilename", "parrucchieri.exe" "\0"
+            VALUE "ProductName", "parrucchieri" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

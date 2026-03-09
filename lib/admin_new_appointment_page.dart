@@ -872,7 +872,8 @@ class _AdminServiceSelectionPageState extends State<AdminServiceSelectionPage> {
       final response = await supabase
           .from('SERVIZI')
           .select('id, descrizione, prezzo, durata')
-          .eq('sesso_id', sessoId);
+          .eq('sesso_id', sessoId)
+          .order('ordine');
 
       setState(() {
         _services = List<Map<String, dynamic>>.from(response);

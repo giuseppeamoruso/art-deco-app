@@ -64,7 +64,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '1025005736352',
     projectId: 'barber-35eca',
     storageBucket: 'barber-35eca.firebasestorage.app',
-    iosBundleId: 'com.example.barberShop',
+    iosBundleId: 'com.artdeco.barberShop',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
@@ -73,7 +73,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '1025005736352',
     projectId: 'barber-35eca',
     storageBucket: 'barber-35eca.firebasestorage.app',
-    iosBundleId: 'com.example.barberShop',
+    iosBundleId: 'com.artdeco.barberShop',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(

@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'admin_appointments_page.dart';
+import 'admin_gestione_utenti_page.dart';
 import 'login_page.dart';
 import 'admin_new_appointment_page.dart';
 import 'stylist_assenze_admin_page.dart';
 import 'admin_orari_eccezioni_page.dart';
+import 'admin_matrimonio_richieste_page.dart';
 
 class AdminDashboardPage extends StatefulWidget {
   const AdminDashboardPage({super.key});
@@ -23,12 +25,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     'pending': 0,
     'completed': 0,
   };
+  int _richiesteMatrimoniNonViste = 0;
 
   @override
   void initState() {
     super.initState();
     _loadAdminData();
     _loadTodayStats();
+    _loadRichiesteMatrimoni();
   }
 
   Future<void> _loadAdminData() async {
@@ -88,6 +92,28 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
     } catch (e) {
       print('Errore caricamento statistiche: $e');
+    }
+  }
+
+  Future<void> _loadRichiesteMatrimoni() async {
+    try {
+      final supabase = Supabase.instance.client;
+
+      final response = await supabase
+          .from('MATRIMONIO_RICHIESTE')
+          .select()
+          .isFilter('deleted_at', null);
+
+      List<Map<String, dynamic>> richieste = List<Map<String, dynamic>>.from(response);
+
+      // Conta quelle non viste
+      int nonViste = richieste.where((r) => r['visionata_da_admin'] == false).length;
+
+      setState(() {
+        _richiesteMatrimoniNonViste = nonViste;
+      });
+    } catch (e) {
+      print('Errore caricamento richieste matrimoni: $e');
     }
   }
 
@@ -208,7 +234,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         actions: [
           IconButton(
             onPressed: () {
-              _loadTodayStats(); // Refresh stats
+              _loadTodayStats();
+              _loadRichiesteMatrimoni();
             },
             icon: const Icon(Icons.refresh, color: Colors.white),
             tooltip: 'Aggiorna',
@@ -225,6 +252,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           color: Colors.red,
           onRefresh: () async {
             await _loadTodayStats();
+            await _loadRichiesteMatrimoni();
           },
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
@@ -413,7 +441,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
         const SizedBox(height: 12),
 
-        // NUOVO: Card per Gestione Orari ed Eccezioni
+        // Card per Gestione Orari ed Eccezioni
         _buildMenuCard(
           title: 'Orari e Chiusure',
           subtitle: 'Gestisci festività e orari speciali',
@@ -424,6 +452,45 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               context,
               MaterialPageRoute(
                 builder: (context) => const AdminOrariEccezioniPage(),
+              ),
+            );
+          },
+        ),
+
+        const SizedBox(height: 12),
+
+        // 💍 Card per Richieste Matrimoni
+        _buildMenuCard(
+          title: 'Richieste Matrimoni',
+          subtitle: _richiesteMatrimoniNonViste > 0
+              ? '⚠️ $_richiesteMatrimoniNonViste nuove richieste'
+              : 'Gestisci richieste matrimoni',
+          icon: Icons.favorite,
+          color: const Color(0xFFD4AF37), // Oro
+          onTap: () async {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const AdminMatrimonioRichiestePage(),
+              ),
+            );
+            // Ricarica dopo il ritorno per aggiornare il badge
+            _loadRichiesteMatrimoni();
+          },
+        ),
+        const SizedBox(height: 12),
+
+// 👥 Card Gestione Utenti
+        _buildMenuCard(
+          title: 'Gestione Utenti',
+          subtitle: 'Crediti, segnalazioni e blocchi',
+          icon: Icons.people,
+          color: Colors.teal,
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const AdminGestioneUtentiPage(),
               ),
             );
           },
@@ -459,17 +526,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                       builder: (context) => const AdminNewAppointmentPage(),
                     ),
                   );
-                },
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildQuickActionButton(
-                title: 'Report Giornaliero',
-                icon: Icons.assessment,
-                color: Colors.blue,
-                onTap: () {
-                  _showFeatureComingSoon('Report');
                 },
               ),
             ),

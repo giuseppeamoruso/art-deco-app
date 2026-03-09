@@ -15,6 +15,7 @@ class ServiceSelectionPage extends StatefulWidget {
 }
 
 class _ServiceSelectionPageState extends State<ServiceSelectionPage> {
+  String _searchQuery = '';
   bool _isLoading = true;
   List<Map<String, dynamic>> _services = [];
   List<Map<String, dynamic>> _selectedServices = [];
@@ -34,12 +35,11 @@ class _ServiceSelectionPageState extends State<ServiceSelectionPage> {
       final supabase = Supabase.instance.client;
       final sessoId = widget.section == 'uomo' ? 1 : 2;
 
-      // Query per ottenere i servizi filtrati per sesso
       final response = await supabase
           .from('SERVIZI')
           .select('id, descrizione, prezzo, durata')
           .eq('sesso_id', sessoId)
-          .order('descrizione', ascending: true); // 🆕 Ordine alfabetico A-Z
+          .order('ordine', ascending: true);
 
       setState(() {
         _services = List<Map<String, dynamic>>.from(response);
@@ -47,7 +47,6 @@ class _ServiceSelectionPageState extends State<ServiceSelectionPage> {
       });
 
       print('✅ Servizi caricati: ${_services.length}');
-
     } catch (e) {
       print('❌ Errore caricamento servizi: $e');
       setState(() => _isLoading = false);
@@ -61,14 +60,12 @@ class _ServiceSelectionPageState extends State<ServiceSelectionPage> {
   void _toggleService(Map<String, dynamic> service) {
     setState(() {
       final existingIndex = _selectedServices.indexWhere(
-              (s) => s['id'] == service['id']
+            (s) => s['id'] == service['id'],
       );
 
       if (existingIndex >= 0) {
-        // Rimuovi il servizio
         _selectedServices.removeAt(existingIndex);
       } else {
-        // Aggiungi il servizio
         _selectedServices.add(service);
       }
 
@@ -81,11 +78,10 @@ class _ServiceSelectionPageState extends State<ServiceSelectionPage> {
     _totalDuration = Duration.zero;
 
     for (final service in _selectedServices) {
-      // Calcola prezzo totale
-      final prezzoString = service['prezzo'].toString().replaceAll('€', '').trim();
+      final prezzoString =
+      service['prezzo'].toString().replaceAll('€', '').trim();
       _totalPrice += double.tryParse(prezzoString) ?? 0.0;
 
-      // Calcola durata totale (formato TIME da Supabase: "HH:MM:SS")
       final durataString = service['durata'].toString();
       final parts = durataString.split(':');
       if (parts.length >= 3) {
@@ -195,7 +191,6 @@ class _ServiceSelectionPageState extends State<ServiceSelectionPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Riepilogo totali
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -228,7 +223,9 @@ class _ServiceSelectionPageState extends State<ServiceSelectionPage> {
                     Text(
                       '€${_totalPrice.toStringAsFixed(2)}',
                       style: TextStyle(
-                        color: widget.section == 'donna' ? Colors.pink : Colors.blue,
+                        color: widget.section == 'donna'
+                            ? Colors.pink
+                            : Colors.blue,
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
                       ),
@@ -237,8 +234,6 @@ class _ServiceSelectionPageState extends State<ServiceSelectionPage> {
                 ),
               ),
               const SizedBox(height: 16),
-
-              // Pulsante continua
               SizedBox(
                 width: double.infinity,
                 height: 56,
@@ -313,9 +308,16 @@ class _ServiceSelectionPageState extends State<ServiceSelectionPage> {
   }
 
   Widget _buildServicesList() {
+    // ✅ Filtra i servizi in base alla ricerca
+    final filteredServices = _services.where((service) {
+      final descrizione =
+          service['descrizione']?.toString().toLowerCase() ?? '';
+      return descrizione.contains(_searchQuery.toLowerCase());
+    }).toList();
+
     return Column(
       children: [
-        // Header informativo
+        // Header con barra di ricerca
         Container(
           width: double.infinity,
           margin: const EdgeInsets.all(20),
@@ -336,7 +338,8 @@ class _ServiceSelectionPageState extends State<ServiceSelectionPage> {
             children: [
               Icon(
                 Icons.content_cut,
-                color: widget.section == 'donna' ? Colors.pink : Colors.blue,
+                color:
+                widget.section == 'donna' ? Colors.pink : Colors.blue,
                 size: 32,
               ),
               const SizedBox(height: 12),
@@ -357,33 +360,84 @@ class _ServiceSelectionPageState extends State<ServiceSelectionPage> {
                   fontSize: 14,
                 ),
               ),
+              const SizedBox(height: 16),
+
+              // 🔍 BARRA DI RICERCA
+              TextField(
+                onChanged: (value) => setState(() => _searchQuery = value),
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  hintText: 'Cerca servizio...',
+                  hintStyle: TextStyle(color: Colors.grey[500]),
+                  prefixIcon: Icon(
+                    Icons.search,
+                    color: widget.section == 'donna'
+                        ? Colors.pink
+                        : Colors.blue,
+                  ),
+                  suffixIcon: _searchQuery.isNotEmpty
+                      ? IconButton(
+                    icon: const Icon(Icons.clear, color: Colors.grey),
+                    onPressed: () =>
+                        setState(() => _searchQuery = ''),
+                  )
+                      : null,
+                  filled: true,
+                  fillColor: const Color(0xFF1a1a1a),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(
+                      color: widget.section == 'donna'
+                          ? Colors.pink
+                          : Colors.blue,
+                      width: 1.5,
+                    ),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
 
-        // Lista servizi
+        // Lista servizi filtrata
         Expanded(
-          child: ListView.builder(
+          child: filteredServices.isEmpty
+              ? Center(
+            child: Text(
+              'Nessun servizio trovato per "$_searchQuery"',
+              style: TextStyle(color: Colors.grey[400], fontSize: 16),
+              textAlign: TextAlign.center,
+            ),
+          )
+              : ListView.builder(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            itemCount: _services.length,
+            itemCount: filteredServices.length,
             itemBuilder: (context, index) {
-              final service = _services[index];
+              final service = filteredServices[index];
               final isSelected = _selectedServices.any(
-                      (s) => s['id'] == service['id']
+                    (s) => s['id'] == service['id'],
               );
 
               return Container(
                 margin: const EdgeInsets.only(bottom: 12),
                 child: Card(
                   color: isSelected
-                      ? (widget.section == 'donna' ? Colors.pink.withOpacity(0.1) : Colors.blue.withOpacity(0.1))
+                      ? (widget.section == 'donna'
+                      ? Colors.pink.withOpacity(0.1)
+                      : Colors.blue.withOpacity(0.1))
                       : const Color(0xFF2d2d2d),
                   elevation: isSelected ? 8 : 4,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
                     side: isSelected
                         ? BorderSide(
-                      color: widget.section == 'donna' ? Colors.pink : Colors.blue,
+                      color: widget.section == 'donna'
+                          ? Colors.pink
+                          : Colors.blue,
                       width: 2,
                     )
                         : BorderSide.none,
@@ -406,14 +460,18 @@ class _ServiceSelectionPageState extends State<ServiceSelectionPage> {
                               borderRadius: BorderRadius.circular(25),
                               border: isSelected
                                   ? Border.all(
-                                color: widget.section == 'donna' ? Colors.pink : Colors.blue,
+                                color: widget.section == 'donna'
+                                    ? Colors.pink
+                                    : Colors.blue,
                                 width: 2,
                               )
                                   : null,
                             ),
                             child: Icon(
                               Icons.content_cut,
-                              color: widget.section == 'donna' ? Colors.pink : Colors.blue,
+                              color: widget.section == 'donna'
+                                  ? Colors.pink
+                                  : Colors.blue,
                               size: 24,
                             ),
                           ),
@@ -423,7 +481,8 @@ class _ServiceSelectionPageState extends State<ServiceSelectionPage> {
                           // Informazioni servizio
                           Expanded(
                             child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                              crossAxisAlignment:
+                              CrossAxisAlignment.start,
                               children: [
                                 Text(
                                   service['descrizione'] ?? 'Servizio',
@@ -445,8 +504,16 @@ class _ServiceSelectionPageState extends State<ServiceSelectionPage> {
                                     Text(
                                       _formatDuration(
                                         Duration(
-                                          hours: int.tryParse(service['durata'].toString().split(':')[0]) ?? 0,
-                                          minutes: int.tryParse(service['durata'].toString().split(':')[1]) ?? 0,
+                                          hours: int.tryParse(service[
+                                          'durata']
+                                              .toString()
+                                              .split(':')[0]) ??
+                                              0,
+                                          minutes: int.tryParse(service[
+                                          'durata']
+                                              .toString()
+                                              .split(':')[1]) ??
+                                              0,
                                         ),
                                       ),
                                       style: TextStyle(
@@ -464,7 +531,9 @@ class _ServiceSelectionPageState extends State<ServiceSelectionPage> {
                                     Text(
                                       _formatPrice(service['prezzo']),
                                       style: TextStyle(
-                                        color: widget.section == 'donna' ? Colors.pink : Colors.blue,
+                                        color: widget.section == 'donna'
+                                            ? Colors.pink
+                                            : Colors.blue,
                                         fontSize: 16,
                                         fontWeight: FontWeight.bold,
                                       ),
@@ -475,17 +544,21 @@ class _ServiceSelectionPageState extends State<ServiceSelectionPage> {
                             ),
                           ),
 
-                          // Checkbox/Icona selezione
+                          // Checkbox selezione
                           Container(
                             width: 24,
                             height: 24,
                             decoration: BoxDecoration(
                               color: isSelected
-                                  ? (widget.section == 'donna' ? Colors.pink : Colors.blue)
+                                  ? (widget.section == 'donna'
+                                  ? Colors.pink
+                                  : Colors.blue)
                                   : Colors.transparent,
                               border: Border.all(
                                 color: isSelected
-                                    ? (widget.section == 'donna' ? Colors.pink : Colors.blue)
+                                    ? (widget.section == 'donna'
+                                    ? Colors.pink
+                                    : Colors.blue)
                                     : Colors.grey,
                                 width: 2,
                               ),

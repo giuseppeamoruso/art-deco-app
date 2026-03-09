@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'login_page.dart';
 import 'booking_selection_page.dart';
+import 'matrimonio_eventi_page.dart';
 import 'my_appointments_page.dart';
 import 'notification_page.dart';
 import 'onesignal_service.dart';
@@ -485,17 +486,18 @@ class _HomePageState extends State<HomePage> {
                   Expanded(
                     child: GridView.count(
                       crossAxisCount: 2,
-                      crossAxisSpacing: 16,
-                      mainAxisSpacing: 16,
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 12,
+                      childAspectRatio: 1.1, // ✅ Rende le card un po' più alte
                       children: [
                         _buildMenuCard(
-                          title: 'Prenota Appuntamento',
+                          title: 'Prenota\nAppuntamento',
                           icon: Icons.calendar_today,
                           color: Colors.blue,
                           onTap: _checkProfileAndNavigateToBooking,
                         ),
                         _buildMenuCard(
-                          title: 'I Miei Appuntamenti',
+                          title: 'I Miei\nAppuntamenti',
                           icon: Icons.event_note,
                           color: Colors.green,
                           onTap: () {
@@ -506,18 +508,7 @@ class _HomePageState extends State<HomePage> {
                             );
                           },
                         ),
-                        _buildMenuCard(
-                          title: 'Servizi',
-                          icon: Icons.content_cut,
-                          color: Colors.purple,
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (context) => const ServicesListPage(),
-                              ),
-                            );
-                          },
-                        ),
+
                         _buildMenuCard(
                           title: 'Profilo',
                           icon: Icons.person,
@@ -526,6 +517,18 @@ class _HomePageState extends State<HomePage> {
                             Navigator.of(context).push(
                               MaterialPageRoute(
                                 builder: (context) => const ProfilePage(),
+                              ),
+                            );
+                          },
+                        ),
+                        _buildMenuCard(
+                          title: 'Matrimoni\n& Eventi',
+                          icon: Icons.favorite,
+                          color: const Color(0xFFD4AF37),
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (context) => const MatrimonioEventiPage(),
                               ),
                             );
                           },
@@ -813,7 +816,7 @@ class _HomePageState extends State<HomePage> {
         borderRadius: BorderRadius.circular(16),
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(16), // ✅ Ridotto padding
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
             gradient: LinearGradient(
@@ -829,26 +832,28 @@ class _HomePageState extends State<HomePage> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(12), // ✅ Ridotto padding icona
                 decoration: BoxDecoration(
                   color: color.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(
                   icon,
-                  size: 32,
+                  size: 28, // ✅ Icona un po' più piccola
                   color: color,
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10), // ✅ Spaziatura ridotta
               Text(
                 title,
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 14,
+                  fontSize: 13, // ✅ Testo più piccolo
                   fontWeight: FontWeight.w600,
                 ),
                 textAlign: TextAlign.center,
+                maxLines: 2, // ✅ Massimo 2 righe
+                overflow: TextOverflow.ellipsis, // ✅ Taglia se troppo lungo
               ),
             ],
           ),
@@ -975,7 +980,7 @@ class _HomePageState extends State<HomePage> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Ven-Sab: 9:00 - 13:00, 16:00 - 19:00',
+                      'Ven-Sab: 9:00 - 19:00',
                       style: TextStyle(
                         color: Colors.grey[300],
                         fontSize: 14,

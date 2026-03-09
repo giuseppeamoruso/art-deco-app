@@ -38,14 +38,14 @@ class _ServicesListPageState extends State<ServicesListPage> with SingleTickerPr
           .from('SERVIZI')
           .select('id, descrizione, prezzo, durata')
           .eq('sesso_id', 1)
-          .order('descrizione', ascending: true);
+          .order('ordine', ascending: true);
 
       // Carica servizi donna (sesso_id = 2)
       final womenResponse = await supabase
           .from('SERVIZI')
           .select('id, descrizione, prezzo, durata')
           .eq('sesso_id', 2)
-          .order('descrizione', ascending: true);
+          .order('ordine', ascending: true);
 
       setState(() {
         _menServices = List<Map<String, dynamic>>.from(menResponse);

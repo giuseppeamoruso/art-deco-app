@@ -1,4 +1,4 @@
-package com.example.barber_shop
+package com.artdeco.parrucchieri
 
 import io.flutter.embedding.android.FlutterFragmentActivity
 

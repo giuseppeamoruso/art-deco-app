@@ -9,13 +9,22 @@ class ProfilePage extends StatefulWidget {
   State<ProfilePage> createState() => _ProfilePageState();
 }
 
-class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStateMixin {
+class _ProfilePageState extends State<ProfilePage> with TickerProviderStateMixin {
   late TabController _tabController;
   bool _isLoading = false;
   bool _isLoadingUserData = true;
 
   // Dati utente
   Map<String, dynamic>? _currentUserData;
+
+  // ✅ CREDITI
+  int _totalCrediti = 0;
+  int _previousCrediti = 0;
+
+  // ✅ ANIMAZIONE
+  late AnimationController _animationController;
+  late Animation<double> _scaleAnimation;
+  late Animation<double> _rotationAnimation;
 
   // Controllers per dati personali
   final _nomeController = TextEditingController();
@@ -38,12 +47,34 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+
+    // ✅ Setup animazione crediti
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    );
+
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 1.3).animate(
+      CurvedAnimation(
+        parent: _animationController,
+        curve: Curves.elasticOut,
+      ),
+    );
+
+    _rotationAnimation = Tween<double>(begin: 0, end: 0.1).animate(
+      CurvedAnimation(
+        parent: _animationController,
+        curve: Curves.easeInOut,
+      ),
+    );
+
     _loadUserData();
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _animationController.dispose();
     _nomeController.dispose();
     _cognomeController.dispose();
     _telefonoController.dispose();
@@ -66,13 +97,34 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
       }
 
       final supabase = Supabase.instance.client;
+
+      // Carica dati utente
       final response = await supabase
           .from('USERS')
-          .select('nome, cognome, email, telefono, codice_fiscale')
+          .select('id, nome, cognome, email, telefono, codice_fiscale')
           .eq('uid', user.uid)
           .maybeSingle();
 
       if (response != null) {
+        final userId = response['id'];
+
+        // ✅ Carica crediti totali
+        final creditiResponse = await supabase
+            .from('USERS_CREDITI')
+            .select('crediti')
+            .eq('users_id', userId)
+            .isFilter('deleted_at', null);
+
+        List<Map<String, dynamic>> crediti = List<Map<String, dynamic>>.from(creditiResponse);
+
+        final totalCrediti = crediti.fold<int>(0, (sum, item) {
+          final creditiValue = item['crediti'];
+          if (creditiValue is num) {
+            return sum + creditiValue.toInt();
+          }
+          return sum;
+        });
+
         setState(() {
           _currentUserData = response;
           _nomeController.text = response['nome'] ?? '';
@@ -80,7 +132,17 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
           _emailController.text = response['email'] ?? user.email ?? '';
           _telefonoController.text = response['telefono'] ?? '';
           _codiceFiscaleController.text = response['codice_fiscale'] ?? '';
+
+          // ✅ Aggiorna crediti
+          _previousCrediti = _totalCrediti;
+          _totalCrediti = totalCrediti;
         });
+
+        // ✅ Anima se i crediti sono aumentati
+        if (_previousCrediti > 0 && _totalCrediti > _previousCrediti) {
+          _animationController.forward(from: 0);
+        }
+
       } else {
         // Se non trovato in Supabase, usa i dati Firebase
         _emailController.text = user.email ?? '';
@@ -129,7 +191,7 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
       })
           .eq('uid', user.uid);
 
-      // Aggiorna display name su Firebase se necessario
+      // Aggiorna display name su Firebase
       final newDisplayName = '${_nomeController.text.trim()} ${_cognomeController.text.trim()}';
       if (user.displayName != newDisplayName) {
         await user.updateDisplayName(newDisplayName);
@@ -157,7 +219,7 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
         return;
       }
 
-      // Ri-autentica l'utente con la password corrente
+      // Ri-autentica l'utente
       final credential = firebase_auth.EmailAuthProvider.credential(
         email: user.email!,
         password: _currentPasswordController.text,
@@ -170,7 +232,7 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
 
       _showSuccessMessage('Password cambiata con successo');
 
-      // Pulisci i campi password
+      // Pulisci i campi
       _currentPasswordController.clear();
       _newPasswordController.clear();
       _confirmPasswordController.clear();
@@ -269,6 +331,13 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
           icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: () => Navigator.of(context).pop(),
         ),
+        actions: [
+          IconButton(
+            onPressed: _loadUserData,
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Aggiorna',
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: Colors.white,
@@ -304,178 +373,391 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
   }
 
   Widget _buildPersonalDataTab() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Form(
-        key: _personalFormKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Colors.blue, Colors.blue.withOpacity(0.7)],
+    return RefreshIndicator(
+      onRefresh: _loadUserData,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(20),
+        child: Form(
+          key: _personalFormKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ✅ CARD CREDITI IN EVIDENZA
+              _buildCreditiCard(),
+
+              const SizedBox(height: 24),
+
+              // Header
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Colors.blue, Colors.blue.withOpacity(0.7)],
+                  ),
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                children: [
-                  Container(
-                    width: 80,
-                    height: 80,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(40),
+                child: Column(
+                  children: [
+                    Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(40),
+                      ),
+                      child: const Icon(
+                        Icons.person,
+                        size: 40,
+                        color: Colors.blue,
+                      ),
                     ),
-                    child: const Icon(
-                      Icons.person,
-                      size: 40,
-                      color: Colors.blue,
+                    const SizedBox(height: 16),
+                    Text(
+                      '${_nomeController.text} ${_cognomeController.text}'.trim().isEmpty
+                          ? 'Il tuo Profilo'
+                          : '${_nomeController.text} ${_cognomeController.text}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _emailController.text.isEmpty
+                          ? 'Completa il tuo profilo'
+                          : _emailController.text,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              // Campi del form
+              TextFormField(
+                controller: _nomeController,
+                style: const TextStyle(color: Colors.white),
+                decoration: _inputDecoration(
+                  labelText: 'Nome',
+                  prefixIcon: const Icon(Icons.person_outline, color: Colors.white70),
+                ),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Il nome è richiesto';
+                  }
+                  return null;
+                },
+              ),
+
+              const SizedBox(height: 16),
+
+              TextFormField(
+                controller: _cognomeController,
+                style: const TextStyle(color: Colors.white),
+                decoration: _inputDecoration(
+                  labelText: 'Cognome',
+                  prefixIcon: const Icon(Icons.person_outline, color: Colors.white70),
+                ),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Il cognome è richiesto';
+                  }
+                  return null;
+                },
+              ),
+
+              const SizedBox(height: 16),
+
+              TextFormField(
+                controller: _emailController,
+                style: const TextStyle(color: Colors.white),
+                keyboardType: TextInputType.emailAddress,
+                enabled: false,
+                decoration: _inputDecoration(
+                  labelText: 'Email',
+                  prefixIcon: const Icon(Icons.email_outlined, color: Colors.white70),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              TextFormField(
+                controller: _telefonoController,
+                style: const TextStyle(color: Colors.white),
+                keyboardType: TextInputType.phone,
+                decoration: _inputDecoration(
+                  labelText: 'Numero di Telefono',
+                  prefixIcon: const Icon(Icons.phone_outlined, color: Colors.white70),
+                ),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Il numero di telefono è richiesto per le prenotazioni';
+                  }
+                  if (value.trim().length < 10) {
+                    return 'Inserisci un numero di telefono valido';
+                  }
+                  return null;
+                },
+              ),
+
+              const SizedBox(height: 16),
+
+              TextFormField(
+                controller: _codiceFiscaleController,
+                style: const TextStyle(color: Colors.white),
+                decoration: _inputDecoration(
+                  labelText: 'Codice Fiscale (opzionale)',
+                  prefixIcon: const Icon(Icons.assignment_ind_outlined, color: Colors.white70),
+                ),
+                validator: (value) {
+                  if (value != null && value.trim().isNotEmpty && value.trim().length != 16) {
+                    return 'Il codice fiscale deve essere di 16 caratteri';
+                  }
+                  return null;
+                },
+              ),
+
+              const SizedBox(height: 32),
+
+              // Pulsante salva
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton(
+                  onPressed: _isLoading ? null : _updatePersonalData,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  Text(
-                    '${_nomeController.text} ${_cognomeController.text}'.trim().isEmpty
-                        ? 'Il tuo Profilo'
-                        : '${_nomeController.text} ${_cognomeController.text}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 24,
+                  child: _isLoading
+                      ? const CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
+                      : const Text(
+                    'Salva Modifiche',
+                    style: TextStyle(
+                      fontSize: 16,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  const SizedBox(height: 8),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ✅ CARD CREDITI PROMINENTE CON ANIMAZIONE
+  Widget _buildCreditiCard() {
+    final isNearMilestone = _totalCrediti >= 40 && _totalCrediti < 50;
+    final hasReachedMilestone = _totalCrediti >= 50;
+
+    return AnimatedBuilder(
+      animation: _animationController,
+      builder: (context, child) {
+        return Transform.scale(
+          scale: _scaleAnimation.value,
+          child: Transform.rotate(
+            angle: _rotationAnimation.value,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: hasReachedMilestone
+                      ? [
+                    const Color(0xFFFFD700),
+                    const Color(0xFFD4AF37),
+                  ]
+                      : isNearMilestone
+                      ? [
+                    Colors.orange.shade400,
+                    Colors.orange.shade700,
+                  ]
+                      : [
+                    const Color(0xFFD4AF37).withOpacity(0.3),
+                    const Color(0xFF2d2d2d),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: hasReachedMilestone
+                        ? const Color(0xFFFFD700).withOpacity(0.5)
+                        : const Color(0xFFD4AF37).withOpacity(0.3),
+                    blurRadius: 20,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              child: Column(
+                children: [
+                  // Icona e titolo
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        hasReachedMilestone
+                            ? Icons.emoji_events
+                            : Icons.stars,
+                        size: 32,
+                        color: hasReachedMilestone
+                            ? Colors.black87
+                            : Colors.white,
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        hasReachedMilestone ? 'OBIETTIVO RAGGIUNTO!' : 'I Tuoi Crediti',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: hasReachedMilestone
+                              ? Colors.black87
+                              : Colors.white,
+                          letterSpacing: 1,
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // Numero crediti GRANDE
                   Text(
-                    _emailController.text.isEmpty
-                        ? 'Completa il tuo profilo'
-                        : _emailController.text,
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 16,
+                    '$_totalCrediti',
+                    style: TextStyle(
+                      fontSize: 72,
+                      fontWeight: FontWeight.bold,
+                      color: hasReachedMilestone
+                          ? Colors.black87
+                          : Colors.white,
+                      height: 1,
                     ),
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  Text(
+                    'CREDITI',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 3,
+                      color: hasReachedMilestone
+                          ? Colors.black54
+                          : Colors.white70,
+                    ),
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // Progress bar verso 50
+                  if (_totalCrediti < 50) ...[
+                    Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Obiettivo: 50 crediti',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                              ),
+                            ),
+                            Text(
+                              '${50 - _totalCrediti} crediti mancanti',
+                              style: TextStyle(
+                                color: isNearMilestone
+                                    ? Colors.white
+                                    : Colors.white70,
+                                fontSize: 12,
+                                fontWeight: isNearMilestone
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: LinearProgressIndicator(
+                            value: _totalCrediti / 50,
+                            minHeight: 12,
+                            backgroundColor: Colors.white24,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              isNearMilestone
+                                  ? Colors.orange
+                                  : const Color(0xFFD4AF37),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ] else
+                  // Messaggio premio raggiunto
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.black26,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(
+                            Icons.card_giftcard,
+                            color: Colors.black87,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text(
+                              'Hai diritto ad uno sconto generoso!',
+                              style: TextStyle(
+                                color: Colors.black87,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                  const SizedBox(height: 12),
+
+                  // Info
+                  Text(
+                    'Guadagni 5 crediti per ogni appuntamento completato',
+                    style: TextStyle(
+                      color: hasReachedMilestone
+                          ? Colors.black54
+                          : Colors.white54,
+                      fontSize: 11,
+                    ),
+                    textAlign: TextAlign.center,
                   ),
                 ],
               ),
             ),
-
-            const SizedBox(height: 24),
-
-            // Campi del form
-            TextFormField(
-              controller: _nomeController,
-              style: const TextStyle(color: Colors.white),
-              decoration: _inputDecoration(
-                labelText: 'Nome',
-                prefixIcon: const Icon(Icons.person_outline, color: Colors.white70),
-              ),
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Il nome è richiesto';
-                }
-                return null;
-              },
-            ),
-
-            const SizedBox(height: 16),
-
-            TextFormField(
-              controller: _cognomeController,
-              style: const TextStyle(color: Colors.white),
-              decoration: _inputDecoration(
-                labelText: 'Cognome',
-                prefixIcon: const Icon(Icons.person_outline, color: Colors.white70),
-              ),
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Il cognome è richiesto';
-                }
-                return null;
-              },
-            ),
-
-            const SizedBox(height: 16),
-
-            TextFormField(
-              controller: _emailController,
-              style: const TextStyle(color: Colors.white),
-              keyboardType: TextInputType.emailAddress,
-              enabled: false, // Email non modificabile
-              decoration: _inputDecoration(
-                labelText: 'Email',
-                prefixIcon: const Icon(Icons.email_outlined, color: Colors.white70),
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            TextFormField(
-              controller: _telefonoController,
-              style: const TextStyle(color: Colors.white),
-              keyboardType: TextInputType.phone,
-              decoration: _inputDecoration(
-                labelText: 'Numero di Telefono',
-                prefixIcon: const Icon(Icons.phone_outlined, color: Colors.white70),
-              ),
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Il numero di telefono è richiesto per le prenotazioni';
-                }
-                if (value.trim().length < 10) {
-                  return 'Inserisci un numero di telefono valido';
-                }
-                return null;
-              },
-            ),
-
-            const SizedBox(height: 16),
-
-            TextFormField(
-              controller: _codiceFiscaleController,
-              style: const TextStyle(color: Colors.white),
-              decoration: _inputDecoration(
-                labelText: 'Codice Fiscale (opzionale)',
-                prefixIcon: const Icon(Icons.assignment_ind_outlined, color: Colors.white70),
-              ),
-              validator: (value) {
-                if (value != null && value.trim().isNotEmpty && value.trim().length != 16) {
-                  return 'Il codice fiscale deve essere di 16 caratteri';
-                }
-                return null;
-              },
-            ),
-
-            const SizedBox(height: 32),
-
-            // Pulsante salva
-            SizedBox(
-              width: double.infinity,
-              height: 56,
-              child: ElevatedButton(
-                onPressed: _isLoading ? null : _updatePersonalData,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: _isLoading
-                    ? const CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
-                    : const Text(
-                  'Salva Modifiche',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -575,7 +857,7 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
               ),
             ),
           ] else ...[
-            // Form cambio password per utenti email
+            // Form cambio password
             Form(
               key: _passwordFormKey,
               child: Column(

@@ -45,8 +45,11 @@
     <true/>
     <key>UIApplicationSupportsIndirectInputEvents</key>
     <true/>
+
+    <!-- ✅ URL SCHEMES - Google Sign In + UniCredit Deep Link -->
     <key>CFBundleURLTypes</key>
     <array>
+       <!-- Google Sign In -->
        <dict>
           <key>CFBundleTypeRole</key>
           <string>Editor</string>
@@ -55,11 +58,26 @@
              <string>com.googleusercontent.apps.1025005736352-g9bc0uddu4jch9jhicrqpb076089l487</string>
           </array>
        </dict>
+       <!-- UniCredit Payment Deep Link -->
+       <dict>
+          <key>CFBundleTypeRole</key>
+          <string>Editor</string>
+          <key>CFBundleURLName</key>
+          <string>it.artdecoparrucchieri.app</string>
+          <key>CFBundleURLSchemes</key>
+          <array>
+             <string>artdeco</string>
+          </array>
+       </dict>
     </array>
+
+    <!-- ✅ URL QUERIES - Gmail + Browser URLs -->
     <key>LSApplicationQueriesSchemes</key>
     <array>
        <string>googlegmail</string>
        <string>googlemail</string>
+       <string>https</string>
+       <string>http</string>
     </array>
 
     <!-- ✅ NOTIFICHE - Descrizione per permessi -->
