@@ -81,5 +81,18 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+<key>NSLocationWhenInUseUsageDescription</key>
+<string>L'app utilizza la posizione per mostrarti il salone più vicino.</string>
+
+<key>NSCameraUsageDescription</key>
+<string>L'app utilizza la fotocamera per aggiornare la tua foto profilo.</string>
+
+<key>NSPhotoLibraryUsageDescription</key>
+<string>L'app accede alle foto per aggiornare la tua foto profilo.</string>
+
+<key>NSMicrophoneUsageDescription</key>
+<string>L'app potrebbe accedere al microfono per alcune funzionalità.</string>
+<key>ITSAppUsesNonExemptEncryption</key>
+<false/>
 </dict>
 </plist>
