@@ -550,6 +550,26 @@ class _LoginPageState extends State<LoginPage> {
               // Toggle tra login e registrazione
               _buildToggleButton(),
 
+              // ✅ Pulsante modalità ospite (solo nella schermata di login, non registrazione)
+              if (!_showRegisterForm) ...[
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pushAndRemoveUntil(
+                      MaterialPageRoute(builder: (context) => const HomePage()),
+                          (route) => false,
+                    );
+                  },
+                  child: const Text(
+                    'Continua senza registrarti →',
+                    style: TextStyle(
+                      color: Colors.white38,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              ],
+
               const SizedBox(height: 40),
             ],
           ),

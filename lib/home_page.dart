@@ -26,14 +26,14 @@ class _HomePageState extends State<HomePage> {
   int _unreadNotificationsCount = 0;
   List<Map<String, dynamic>> _recentNotifications = [];
 
+  // ✅ Getter per verificare se l'utente è ospite
+  bool get _isGuest => firebase_auth.FirebaseAuth.instance.currentUser == null;
+
   @override
   void initState() {
     super.initState();
-    if (user == null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _navigateToLogin();
-      });
-    } else {
+    // ✅ Gli ospiti possono accedere alla home — non ridirigere al login
+    if (!_isGuest) {
       _loadNotifications();
     }
   }
@@ -117,6 +117,53 @@ class _HomePageState extends State<HomePage> {
       MaterialPageRoute(builder: (context) => const LoginPage()),
           (route) => false,
     );
+  }
+
+  // ✅ Mostra dialogo login per gli ospiti, esegue l'azione se autenticato
+  void _requireLogin(VoidCallback action) {
+    if (_isGuest) {
+      showDialog(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            backgroundColor: const Color(0xFF2d2d2d),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            title: const Row(
+              children: [
+                Icon(Icons.lock_outline, color: Colors.white70, size: 22),
+                SizedBox(width: 8),
+                Text('Accesso richiesto', style: TextStyle(color: Colors.white)),
+              ],
+            ),
+            content: const Text(
+              'Devi accedere o registrarti per usare questa funzione.',
+              style: TextStyle(color: Colors.white70),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Annulla', style: TextStyle(color: Colors.white54)),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  _navigateToLogin();
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: const Color(0xFF1a1a1a),
+                ),
+                child: const Text('Accedi'),
+              ),
+            ],
+          );
+        },
+      );
+    } else {
+      action();
+    }
   }
 
   void _showLogoutDialog() {
@@ -407,8 +454,8 @@ class _HomePageState extends State<HomePage> {
                 ),
                 const Spacer(),
 
-                // ✅ CAMPANELLINA NOTIFICHE
-                Stack(
+                // ✅ CAMPANELLINA NOTIFICHE (solo per utenti autenticati)
+                if (!_isGuest) Stack(
                   children: [
                     IconButton(
                       onPressed: () async {
@@ -453,14 +500,27 @@ class _HomePageState extends State<HomePage> {
                   ],
                 ),
 
-                IconButton(
-                  onPressed: _showLogoutDialog,
-                  icon: const Icon(
-                    Icons.logout,
-                    color: Colors.white,
+                // ✅ Ospite → pulsante "Accedi" | Utente → pulsante "Logout"
+                if (_isGuest)
+                  TextButton(
+                    onPressed: _navigateToLogin,
+                    child: const Text(
+                      'Accedi',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  )
+                else
+                  IconButton(
+                    onPressed: _showLogoutDialog,
+                    icon: const Icon(
+                      Icons.logout,
+                      color: Colors.white,
+                    ),
+                    tooltip: 'Logout',
                   ),
-                  tooltip: 'Logout',
-                ),
               ],
             ),
           ),
@@ -494,32 +554,32 @@ class _HomePageState extends State<HomePage> {
                           title: 'Prenota\nAppuntamento',
                           icon: Icons.calendar_today,
                           color: Colors.blue,
-                          onTap: _checkProfileAndNavigateToBooking,
+                          onTap: () => _requireLogin(_checkProfileAndNavigateToBooking),
                         ),
                         _buildMenuCard(
                           title: 'I Miei\nAppuntamenti',
                           icon: Icons.event_note,
                           color: Colors.green,
-                          onTap: () {
+                          onTap: () => _requireLogin(() {
                             Navigator.of(context).push(
                               MaterialPageRoute(
                                 builder: (context) => const MyAppointmentsPage(),
                               ),
                             );
-                          },
+                          }),
                         ),
 
                         _buildMenuCard(
                           title: 'Profilo',
                           icon: Icons.person,
                           color: Colors.orange,
-                          onTap: () {
+                          onTap: () => _requireLogin(() {
                             Navigator.of(context).push(
                               MaterialPageRoute(
                                 builder: (context) => const ProfilePage(),
                               ),
                             );
-                          },
+                          }),
                         ),
                         _buildMenuCard(
                           title: 'Matrimoni\n& Eventi',
