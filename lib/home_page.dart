@@ -382,16 +382,6 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    if (user == null) {
-      return const Scaffold(
-        backgroundColor: Color(0xFF1a1a1a),
-        body: Center(
-          child: CircularProgressIndicator(
-            color: Colors.white,
-          ),
-        ),
-      );
-    }
 
     return Scaffold(
       backgroundColor: const Color(0xFF1a1a1a),
@@ -585,13 +575,13 @@ class _HomePageState extends State<HomePage> {
                           title: 'Matrimoni\n& Eventi',
                           icon: Icons.favorite,
                           color: const Color(0xFFD4AF37),
-                          onTap: () {
+                          onTap: () => _requireLogin(() {
                             Navigator.of(context).push(
                               MaterialPageRoute(
                                 builder: (context) => const MatrimonioEventiPage(),
                               ),
                             );
-                          },
+                          }),
                         ),
                       ],
                     ),
