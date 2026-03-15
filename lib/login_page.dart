@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:io';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'home_page.dart';
 import 'admin_dashboard_page.dart';
 import 'onesignal_push_service.dart';
@@ -307,6 +308,53 @@ class _LoginPageState extends State<LoginPage> {
       print('❌ Errore Google Sign-In: $e');
       if (mounted) {
         _showErrorMessage('❌ Errore durante il login con Google: ${e.toString()}');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  // 🍎 Login con Apple - iOS only
+  Future<void> signInWithApple() async {
+    setState(() => _isLoading = true);
+
+    try {
+      final appleCredential = await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+      );
+
+      final oauthCredential = firebase_auth.OAuthProvider('apple.com').credential(
+        idToken: appleCredential.identityToken,
+        accessToken: appleCredential.authorizationCode,
+      );
+
+      final userCredential = await firebase_auth.FirebaseAuth.instance
+          .signInWithCredential(oauthCredential);
+
+      if (userCredential.user != null) {
+        // Apple fornisce nome/cognome solo al PRIMO login
+        final fullName = appleCredential.givenName != null
+            ? '${appleCredential.givenName} ${appleCredential.familyName ?? ''}'.trim()
+            : null;
+
+        await syncUserWithSupabase(
+          nome: appleCredential.givenName,
+          cognome: appleCredential.familyName,
+          email: appleCredential.email ?? userCredential.user?.email,
+          telefono: null,
+        );
+        await OneSignalPushService.loginUser(userCredential.user!.uid);
+        await _checkUserRoleAndNavigate();
+      }
+    } catch (e) {
+      print('❌ Errore Apple Sign-In: $e');
+      if (mounted) {
+        _showErrorMessage('❌ Errore durante il login con Apple: ${e.toString()}');
       }
     } finally {
       if (mounted) {
@@ -641,7 +689,48 @@ class _LoginPageState extends State<LoginPage> {
             Expanded(child: Divider(color: Colors.grey[600])),
           ],
         ),
+        const SizedBox(height: 12),
+
+// Pulsante Apple Sign-In (solo iOS)
+        if (Platform.isIOS)
+          SizedBox(
+            width: double.infinity,
+            height: 56,
+            child: ElevatedButton.icon(
+              onPressed: _isLoading ? null : signInWithApple,
+              icon: _isLoading
+                  ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white70),
+                ),
+              )
+                  : const Icon(Icons.apple, size: 22, color: Colors.white),
+              label: Text(
+                _isLoading ? 'Accesso in corso...' : 'Accedi con Apple',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.white,
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.black,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: const BorderSide(color: Colors.white24),
+                ),
+                elevation: 3,
+              ),
+            ),
+          ),
+
         const SizedBox(height: 30),
+
+// Divider con "OPPURE"
 
         // Form di login con email/password
         Form(
