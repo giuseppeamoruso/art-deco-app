@@ -613,209 +613,209 @@ class _AdminAppointmentsPageState extends State<AdminAppointmentsPage> with Sing
     List<String> _availableTimeSlots = [];
 
     showDialog(
-        context: context,
-        builder: (context) => StatefulBuilder(
+      context: context,
+      builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) {
-      Future<void> loadTimeSlotsForCurrentStylist() async {
-        if (_editSelectedStylistId != null) {
-          setDialogState(() => _isLoadingTimeSlots = true);
+          Future<void> loadTimeSlotsForCurrentStylist() async {
+            if (_editSelectedStylistId != null) {
+              setDialogState(() => _isLoadingTimeSlots = true);
 
-          final slots = await _loadAvailableTimeSlotsForStylist(
-            _editSelectedDate,
-            _editSelectedStylistId!,
-            Duration(
-              hours: int.parse(appointment['durata_totale'].split(':')[0]),
-              minutes: int.parse(appointment['durata_totale'].split(':')[1]),
-            ),
-            excludeAppointmentId: appointment['id'],
-          );
+              final slots = await _loadAvailableTimeSlotsForStylist(
+                _editSelectedDate,
+                _editSelectedStylistId!,
+                Duration(
+                  hours: int.parse(appointment['durata_totale'].split(':')[0]),
+                  minutes: int.parse(appointment['durata_totale'].split(':')[1]),
+                ),
+                excludeAppointmentId: appointment['id'],
+              );
 
-          if (context.mounted) {
-            setDialogState(() {
-              _availableTimeSlots = slots;
-              _isLoadingTimeSlots = false;
-              if (!_availableTimeSlots.contains(_editTimeController.text)) {
-                _editTimeController.clear();
+              if (context.mounted) {
+                setDialogState(() {
+                  _availableTimeSlots = slots;
+                  _isLoadingTimeSlots = false;
+                  if (!_availableTimeSlots.contains(_editTimeController.text)) {
+                    _editTimeController.clear();
+                  }
+                });
+              }
+            }
+          }
+
+          if (_isLoadingStylists) {
+            _loadCompatibleStylists(appointment).then((stylists) {
+              if (context.mounted) {
+                setDialogState(() {
+                  _compatibleStylists = stylists;
+                  _isLoadingStylists = false;
+                });
+                loadTimeSlotsForCurrentStylist();
               }
             });
           }
-        }
-      }
 
-      if (_isLoadingStylists) {
-        _loadCompatibleStylists(appointment).then((stylists) {
-          if (context.mounted) {
-            setDialogState(() {
-              _compatibleStylists = stylists;
-              _isLoadingStylists = false;
-            });
-            loadTimeSlotsForCurrentStylist();
-          }
-        });
-      }
-
-      return AlertDialog(
-          backgroundColor: const Color(0xFF2d2d2d),
-    title: const Text('Modifica Appuntamento', style: TextStyle(color: Colors.white)),
-    content: SizedBox(
-    width: double.maxFinite,
-    height: 600,
-    child: SingleChildScrollView(
-    child: Column(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-    Container(
-    padding: const EdgeInsets.all(12),
-    decoration: BoxDecoration(color: const Color(0xFF1a1a1a), borderRadius: BorderRadius.circular(8)),
-    child: Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-    Text('Cliente: ${appointment['USERS']['nome']} ${appointment['USERS']['cognome']}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-    Text('Telefono: ${appointment['USERS']['telefono'] ?? 'N/D'}', style: TextStyle(color: Colors.grey[400], fontSize: 12)),
-    Text('Durata servizio: ${appointment['durata_totale']}', style: TextStyle(color: Colors.grey[400], fontSize: 12)),
-    ],
-    ),
-    ),
-    const SizedBox(height: 16),
-    InkWell(
-    onTap: () async {
-    final date = await showDatePicker(
-    context: context,
-    initialDate: _editSelectedDate,
-    firstDate: DateTime.now(),
-    lastDate: DateTime.now().add(const Duration(days: 365)),
-    builder: (context, child) {
-    return Theme(
-    data: Theme.of(context).copyWith(
-    colorScheme: const ColorScheme.dark(primary: Colors.blue, onPrimary: Colors.white, surface: Color(0xFF2d2d2d), onSurface: Colors.white),
-    ),
-    child: child!,
-    );
-    },
-    );
-    if (date != null) {
-    setDialogState(() {
-    _editSelectedDate = date;
-    });
-    await loadTimeSlotsForCurrentStylist();
-    }
-    },
-    child: Container(
-    width: double.infinity,
-    padding: const EdgeInsets.all(12),
-    decoration: BoxDecoration(border: Border.all(color: Colors.grey[600]!), borderRadius: BorderRadius.circular(8)),
-    child: Row(
-    children: [
-    Icon(Icons.calendar_today, color: Colors.grey[400], size: 20),
-    const SizedBox(width: 8),
-    Text('Data: ${_editSelectedDate.day}/${_editSelectedDate.month}/${_editSelectedDate.year}', style: const TextStyle(color: Colors.white)),
-    ],
-    ),
-    ),
-    ),
-      const SizedBox(height: 16),
-      if (_isLoadingStylists)
-        const CircularProgressIndicator(color: Colors.blue)
-      else
-        DropdownButtonFormField<int>(
-          value: _compatibleStylists.any((s) => s['id'] == _editSelectedStylistId) ? _editSelectedStylistId : null,
-          decoration: InputDecoration(
-            labelText: 'Stylist (solo compatibili)',
-            labelStyle: TextStyle(color: Colors.grey[400]),
-            prefixIcon: Icon(Icons.person, color: Colors.grey[400]),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey[600]!)),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey[600]!)),
-            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Colors.blue)),
-            filled: true,
-            fillColor: const Color(0xFF1a1a1a),
-          ),
-          dropdownColor: const Color(0xFF2d2d2d),
-          style: const TextStyle(color: Colors.white),
-          items: _compatibleStylists.map((stylist) => DropdownMenuItem<int>(
-            value: stylist['id'],
-            child: Text(stylist['descrizione'], style: const TextStyle(color: Colors.white)),
-          )).toList(),
-          onChanged: (value) async {
-            setDialogState(() {
-              _editSelectedStylistId = value;
-            });
-            await loadTimeSlotsForCurrentStylist();
-          },
-        ),
-      const SizedBox(height: 16),
-      if (_isLoadingTimeSlots)
-        const CircularProgressIndicator(color: Colors.blue)
-      else if (_editSelectedStylistId != null && _availableTimeSlots.isNotEmpty) ...[
-        Text('Orari disponibili per ${_compatibleStylists.firstWhere((s) => s['id'] == _editSelectedStylistId, orElse: () => {'descrizione': 'Stylist'})['descrizione']}:', style: TextStyle(color: Colors.grey[300], fontSize: 14)),
-        const SizedBox(height: 8),
-        SizedBox(
-          height: 120,
-          child: GridView.builder(
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 4, childAspectRatio: 2, crossAxisSpacing: 4, mainAxisSpacing: 4),
-            itemCount: _availableTimeSlots.length,
-            itemBuilder: (context, index) {
-              final slot = _availableTimeSlots[index];
-              final isSelected = _editTimeController.text == slot;
-              return InkWell(
-                onTap: () {
-                  setDialogState(() {
-                    _editTimeController.text = slot;
-                  });
-                },
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: isSelected ? Colors.blue : const Color(0xFF1a1a1a),
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(color: isSelected ? Colors.blue : Colors.grey[600]!),
-                  ),
-                  child: Center(
-                    child: Text(slot, style: TextStyle(color: isSelected ? Colors.white : Colors.grey[300], fontSize: 12, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
-                  ),
+          return AlertDialog(
+            backgroundColor: const Color(0xFF2d2d2d),
+            title: const Text('Modifica Appuntamento', style: TextStyle(color: Colors.white)),
+            content: SizedBox(
+              width: double.maxFinite,
+              height: 600,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(color: const Color(0xFF1a1a1a), borderRadius: BorderRadius.circular(8)),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Cliente: ${appointment['USERS']['nome']} ${appointment['USERS']['cognome']}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                          Text('Telefono: ${appointment['USERS']['telefono'] ?? 'N/D'}', style: TextStyle(color: Colors.grey[400], fontSize: 12)),
+                          Text('Durata servizio: ${appointment['durata_totale']}', style: TextStyle(color: Colors.grey[400], fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    InkWell(
+                      onTap: () async {
+                        final date = await showDatePicker(
+                          context: context,
+                          initialDate: _editSelectedDate,
+                          firstDate: DateTime.now(),
+                          lastDate: DateTime.now().add(const Duration(days: 365)),
+                          builder: (context, child) {
+                            return Theme(
+                              data: Theme.of(context).copyWith(
+                                colorScheme: const ColorScheme.dark(primary: Colors.blue, onPrimary: Colors.white, surface: Color(0xFF2d2d2d), onSurface: Colors.white),
+                              ),
+                              child: child!,
+                            );
+                          },
+                        );
+                        if (date != null) {
+                          setDialogState(() {
+                            _editSelectedDate = date;
+                          });
+                          await loadTimeSlotsForCurrentStylist();
+                        }
+                      },
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(border: Border.all(color: Colors.grey[600]!), borderRadius: BorderRadius.circular(8)),
+                        child: Row(
+                          children: [
+                            Icon(Icons.calendar_today, color: Colors.grey[400], size: 20),
+                            const SizedBox(width: 8),
+                            Text('Data: ${_editSelectedDate.day}/${_editSelectedDate.month}/${_editSelectedDate.year}', style: const TextStyle(color: Colors.white)),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    if (_isLoadingStylists)
+                      const CircularProgressIndicator(color: Colors.blue)
+                    else
+                      DropdownButtonFormField<int>(
+                        value: _compatibleStylists.any((s) => s['id'] == _editSelectedStylistId) ? _editSelectedStylistId : null,
+                        decoration: InputDecoration(
+                          labelText: 'Stylist (solo compatibili)',
+                          labelStyle: TextStyle(color: Colors.grey[400]),
+                          prefixIcon: Icon(Icons.person, color: Colors.grey[400]),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey[600]!)),
+                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey[600]!)),
+                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Colors.blue)),
+                          filled: true,
+                          fillColor: const Color(0xFF1a1a1a),
+                        ),
+                        dropdownColor: const Color(0xFF2d2d2d),
+                        style: const TextStyle(color: Colors.white),
+                        items: _compatibleStylists.map((stylist) => DropdownMenuItem<int>(
+                          value: stylist['id'],
+                          child: Text(stylist['descrizione'], style: const TextStyle(color: Colors.white)),
+                        )).toList(),
+                        onChanged: (value) async {
+                          setDialogState(() {
+                            _editSelectedStylistId = value;
+                          });
+                          await loadTimeSlotsForCurrentStylist();
+                        },
+                      ),
+                    const SizedBox(height: 16),
+                    if (_isLoadingTimeSlots)
+                      const CircularProgressIndicator(color: Colors.blue)
+                    else if (_editSelectedStylistId != null && _availableTimeSlots.isNotEmpty) ...[
+                      Text('Orari disponibili per ${_compatibleStylists.firstWhere((s) => s['id'] == _editSelectedStylistId, orElse: () => {'descrizione': 'Stylist'})['descrizione']}:', style: TextStyle(color: Colors.grey[300], fontSize: 14)),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        height: 120,
+                        child: GridView.builder(
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 4, childAspectRatio: 2, crossAxisSpacing: 4, mainAxisSpacing: 4),
+                          itemCount: _availableTimeSlots.length,
+                          itemBuilder: (context, index) {
+                            final slot = _availableTimeSlots[index];
+                            final isSelected = _editTimeController.text == slot;
+                            return InkWell(
+                              onTap: () {
+                                setDialogState(() {
+                                  _editTimeController.text = slot;
+                                });
+                              },
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: isSelected ? Colors.blue : const Color(0xFF1a1a1a),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: isSelected ? Colors.blue : Colors.grey[600]!),
+                                ),
+                                child: Center(
+                                  child: Text(slot, style: TextStyle(color: isSelected ? Colors.white : Colors.grey[300], fontSize: 12, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ] else if (_editSelectedStylistId != null)
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(color: Colors.orange.withOpacity(0.2), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.orange.withOpacity(0.5))),
+                        child: const Text('Nessun orario disponibile per questo stylist nella data selezionata', style: TextStyle(color: Colors.orange), textAlign: TextAlign.center),
+                      ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _editNoteController,
+                      style: const TextStyle(color: Colors.white),
+                      maxLines: 3,
+                      decoration: InputDecoration(
+                        labelText: 'Note (opzionale)',
+                        labelStyle: TextStyle(color: Colors.grey[400]),
+                        prefixIcon: Icon(Icons.note, color: Colors.grey[400]),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey[600]!)),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey[600]!)),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Colors.blue)),
+                        filled: true,
+                        fillColor: const Color(0xFF1a1a1a),
+                      ),
+                    ),
+                  ],
                 ),
-              );
-            },
-          ),
-        ),
-      ] else if (_editSelectedStylistId != null)
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: Colors.orange.withOpacity(0.2), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.orange.withOpacity(0.5))),
-          child: const Text('Nessun orario disponibile per questo stylist nella data selezionata', style: TextStyle(color: Colors.orange), textAlign: TextAlign.center),
-        ),
-      const SizedBox(height: 16),
-      TextFormField(
-        controller: _editNoteController,
-        style: const TextStyle(color: Colors.white),
-        maxLines: 3,
-        decoration: InputDecoration(
-          labelText: 'Note (opzionale)',
-          labelStyle: TextStyle(color: Colors.grey[400]),
-          prefixIcon: Icon(Icons.note, color: Colors.grey[400]),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey[600]!)),
-          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey[600]!)),
-          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Colors.blue)),
-          filled: true,
-          fillColor: const Color(0xFF1a1a1a),
-        ),
-      ),
-    ],
-    ),
-    ),
-    ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Annulla', style: TextStyle(color: Colors.white70))),
-          ElevatedButton(
-            onPressed: _editSelectedStylistId != null && _editTimeController.text.isNotEmpty ? () {
-              Navigator.of(context).pop();
-              _updateAppointment(appointment['id'], _editSelectedDate, _editTimeController.text, _editSelectedStylistId!, _editNoteController.text, appointment);
-            } : null,
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, foregroundColor: Colors.white),
-            child: const Text('Salva Modifiche'),
-          ),
-        ],
-      );
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Annulla', style: TextStyle(color: Colors.white70))),
+              ElevatedButton(
+                onPressed: _editSelectedStylistId != null && _editTimeController.text.isNotEmpty ? () {
+                  Navigator.of(context).pop();
+                  _updateAppointment(appointment['id'], _editSelectedDate, _editTimeController.text, _editSelectedStylistId!, _editNoteController.text, appointment);
+                } : null,
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, foregroundColor: Colors.white),
+                child: const Text('Salva Modifiche'),
+              ),
+            ],
+          );
         },
-        ),
+      ),
     );
   }
 
@@ -1036,6 +1036,8 @@ class _AdminAppointmentsPageState extends State<AdminAppointmentsPage> with Sing
   Future<void> _deleteAppointment(int appointmentId) async {
     try {
       final supabase = Supabase.instance.client;
+      // Elimina in ordine rispettando le foreign key
+      await supabase.from('PAGAMENTI').delete().eq('appuntamento_id', appointmentId);
       await supabase.from('APPUNTAMENTI_SERVIZI').delete().eq('appuntamento_id', appointmentId);
       await supabase.from('APPUNTAMENTI').delete().eq('id', appointmentId);
       _showSuccessMessage('Appuntamento eliminato con successo');
@@ -1447,143 +1449,143 @@ class _AdminAppointmentsPageState extends State<AdminAppointmentsPage> with Sing
     }
 
     showModalBottomSheet(
-        context: context,
-        backgroundColor: Colors.transparent,
-        isScrollControlled: true,
-        builder: (context) => Container(
-            height: MediaQuery.of(context).size.height * 0.7,
-            decoration: const BoxDecoration(color: Color(0xFF2d2d2d), borderRadius: BorderRadius.only(topLeft: Radius.circular(20), topRight: Radius.circular(20))),
-            child: Column(
-                children: [
-            Container(margin: const EdgeInsets.only(top: 12), width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[400], borderRadius: BorderRadius.circular(2))),
-        Container(
-        padding: const EdgeInsets.all(24),
-    child: Row(
-    children: [
-    Container(
-    padding: const EdgeInsets.all(12),
-    decoration: BoxDecoration(color: Colors.blue.withOpacity(0.2), borderRadius: BorderRadius.circular(12)),
-      child: const Icon(Icons.calendar_today, color: Colors.blue, size: 24),
-    ),
-      const SizedBox(width: 16),
-      Expanded(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Container(
+        height: MediaQuery.of(context).size.height * 0.7,
+        decoration: const BoxDecoration(color: Color(0xFF2d2d2d), borderRadius: BorderRadius.only(topLeft: Radius.circular(20), topRight: Radius.circular(20))),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Appuntamento #${appointment['id']}', style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-            Text(_formatDate(appointment['data']), style: TextStyle(color: Colors.grey[400], fontSize: 14)),
-          ],
-        ),
-      ),
-      PopupMenuButton<String>(
-        icon: const Icon(Icons.more_vert, color: Colors.white),
-        color: const Color(0xFF1a1a1a),
-        onSelected: (value) {
-          Navigator.of(context).pop();
-          if (value == 'edit') {
-            _showEditAppointmentDialog(appointment);
-          } else if (value == 'delete') {
-            _showDeleteConfirmation(appointment);
-          }
-        },
-        itemBuilder: (context) => [
-          const PopupMenuItem(value: 'edit', child: Row(children: [Icon(Icons.edit, color: Colors.white, size: 20), SizedBox(width: 8), Text('Modifica', style: TextStyle(color: Colors.white))])),
-          const PopupMenuItem(value: 'delete', child: Row(children: [Icon(Icons.delete, color: Colors.red, size: 20), SizedBox(width: 8), Text('Elimina', style: TextStyle(color: Colors.red))])),
-        ],
-      ),
-    ],
-    ),
-        ),
+            Container(margin: const EdgeInsets.only(top: 12), width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[400], borderRadius: BorderRadius.circular(2))),
+            Container(
+              padding: const EdgeInsets.all(24),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(color: Colors.blue.withOpacity(0.2), borderRadius: BorderRadius.circular(12)),
+                    child: const Icon(Icons.calendar_today, color: Colors.blue, size: 24),
+                  ),
+                  const SizedBox(width: 16),
                   Expanded(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Appuntamento #${appointment['id']}', style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                        Text(_formatDate(appointment['data']), style: TextStyle(color: Colors.grey[400], fontSize: 14)),
+                      ],
+                    ),
+                  ),
+                  PopupMenuButton<String>(
+                    icon: const Icon(Icons.more_vert, color: Colors.white),
+                    color: const Color(0xFF1a1a1a),
+                    onSelected: (value) {
+                      Navigator.of(context).pop();
+                      if (value == 'edit') {
+                        _showEditAppointmentDialog(appointment);
+                      } else if (value == 'delete') {
+                        _showDeleteConfirmation(appointment);
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(value: 'edit', child: Row(children: [Icon(Icons.edit, color: Colors.white, size: 20), SizedBox(width: 8), Text('Modifica', style: TextStyle(color: Colors.white))])),
+                      const PopupMenuItem(value: 'delete', child: Row(children: [Icon(Icons.delete, color: Colors.red, size: 20), SizedBox(width: 8), Text('Elimina', style: TextStyle(color: Colors.red))])),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildDetailSection('Cliente', Icons.person, '${appointment['USERS']['nome']} ${appointment['USERS']['cognome']}', appointment['USERS']['telefono'] ?? 'N/D'),
+                    const SizedBox(height: 16),
+                    _buildDetailSection('Stylist', Icons.content_cut, appointment['STYLIST']['descrizione'], 'Specialista'),
+                    const SizedBox(height: 16),
+                    _buildDetailSection('Orario', Icons.access_time, '${appointment['ora_inizio'].substring(0, 5)} - ${appointment['ora_fine'].substring(0, 5)}', 'Durata: ${_formatDuration(appointment['durata_totale'])}'),
+                    const SizedBox(height: 16),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: _getPaymentStatusColor(appointment['PAGAMENTI']).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: _getPaymentStatusColor(appointment['PAGAMENTI']).withOpacity(0.3), width: 1),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          _buildDetailSection('Cliente', Icons.person, '${appointment['USERS']['nome']} ${appointment['USERS']['cognome']}', appointment['USERS']['telefono'] ?? 'N/D'),
-                          const SizedBox(height: 16),
-                          _buildDetailSection('Stylist', Icons.content_cut, appointment['STYLIST']['descrizione'], 'Specialista'),
-                          const SizedBox(height: 16),
-                          _buildDetailSection('Orario', Icons.access_time, '${appointment['ora_inizio'].substring(0, 5)} - ${appointment['ora_fine'].substring(0, 5)}', 'Durata: ${_formatDuration(appointment['durata_totale'])}'),
-                          const SizedBox(height: 16),
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: _getPaymentStatusColor(appointment['PAGAMENTI']).withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: _getPaymentStatusColor(appointment['PAGAMENTI']).withOpacity(0.3), width: 1),
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Row(
-                                  children: [
-                                    Icon(Icons.payment, color: _getPaymentStatusColor(appointment['PAGAMENTI']), size: 20),
-                                    const SizedBox(width: 8),
-                                    Text('Pagamento', style: TextStyle(color: _getPaymentStatusColor(appointment['PAGAMENTI']), fontSize: 16, fontWeight: FontWeight.bold)),
-                                  ],
-                                ),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  children: [
-                                    Text(_getPaymentStatus(appointment['PAGAMENTI']), style: TextStyle(color: _getPaymentStatusColor(appointment['PAGAMENTI']), fontSize: 14, fontWeight: FontWeight.bold)),
-                                    Text('€${(appointment['prezzo_totale'] ?? 0).toStringAsFixed(2)}', style: TextStyle(color: _getPaymentStatusColor(appointment['PAGAMENTI']), fontSize: 18, fontWeight: FontWeight.bold)),
-                                  ],
-                                ),
-                              ],
-                            ),
+                          Row(
+                            children: [
+                              Icon(Icons.payment, color: _getPaymentStatusColor(appointment['PAGAMENTI']), size: 20),
+                              const SizedBox(width: 8),
+                              Text('Pagamento', style: TextStyle(color: _getPaymentStatusColor(appointment['PAGAMENTI']), fontSize: 16, fontWeight: FontWeight.bold)),
+                            ],
                           ),
-                          const SizedBox(height: 16),
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(color: const Color(0xFF1a1a1a), borderRadius: BorderRadius.circular(12)),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Row(children: [Icon(Icons.list_alt, color: Colors.purple, size: 20), SizedBox(width: 8), Text('Servizi', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold))]),
-                                const SizedBox(height: 12),
-                                if (services.isEmpty)
-                                  Text('Nessun servizio specificato', style: TextStyle(color: Colors.grey[400], fontSize: 14))
-                                else
-                                  ...services.map((service) => Padding(
-                                    padding: const EdgeInsets.only(bottom: 4),
-                                    child: Row(
-                                      children: [
-                                        Container(width: 4, height: 4, decoration: const BoxDecoration(color: Colors.purple, shape: BoxShape.circle)),
-                                        const SizedBox(width: 8),
-                                        Expanded(child: Text(service, style: TextStyle(color: Colors.grey[300], fontSize: 14))),
-                                      ],
-                                    ),
-                                  )).toList(),
-                              ],
-                            ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(_getPaymentStatus(appointment['PAGAMENTI']), style: TextStyle(color: _getPaymentStatusColor(appointment['PAGAMENTI']), fontSize: 14, fontWeight: FontWeight.bold)),
+                              Text('€${(appointment['prezzo_totale'] ?? 0).toStringAsFixed(2)}', style: TextStyle(color: _getPaymentStatusColor(appointment['PAGAMENTI']), fontSize: 18, fontWeight: FontWeight.bold)),
+                            ],
                           ),
-                          if (appointment['note'] != null && appointment['note'].toString().isNotEmpty) ...[
-                            const SizedBox(height: 16),
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(color: const Color(0xFF1a1a1a), borderRadius: BorderRadius.circular(12)),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Row(children: [Icon(Icons.note, color: Colors.orange, size: 20), SizedBox(width: 8), Text('Note', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold))]),
-                                  const SizedBox(height: 8),
-                                  Text(appointment['note'], style: TextStyle(color: Colors.grey[300], fontSize: 14)),
-                                ],
-                              ),
-                            ),
-                          ],
-                          const SizedBox(height: 24),
                         ],
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 16),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(color: const Color(0xFF1a1a1a), borderRadius: BorderRadius.circular(12)),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Row(children: [Icon(Icons.list_alt, color: Colors.purple, size: 20), SizedBox(width: 8), Text('Servizi', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold))]),
+                          const SizedBox(height: 12),
+                          if (services.isEmpty)
+                            Text('Nessun servizio specificato', style: TextStyle(color: Colors.grey[400], fontSize: 14))
+                          else
+                            ...services.map((service) => Padding(
+                              padding: const EdgeInsets.only(bottom: 4),
+                              child: Row(
+                                children: [
+                                  Container(width: 4, height: 4, decoration: const BoxDecoration(color: Colors.purple, shape: BoxShape.circle)),
+                                  const SizedBox(width: 8),
+                                  Expanded(child: Text(service, style: TextStyle(color: Colors.grey[300], fontSize: 14))),
+                                ],
+                              ),
+                            )).toList(),
+                        ],
+                      ),
+                    ),
+                    if (appointment['note'] != null && appointment['note'].toString().isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(color: const Color(0xFF1a1a1a), borderRadius: BorderRadius.circular(12)),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Row(children: [Icon(Icons.note, color: Colors.orange, size: 20), SizedBox(width: 8), Text('Note', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold))]),
+                            const SizedBox(height: 8),
+                            Text(appointment['note'], style: TextStyle(color: Colors.grey[300], fontSize: 14)),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 24),
+                  ],
+                ),
+              ),
             ),
+          ],
         ),
+      ),
     );
   }
 

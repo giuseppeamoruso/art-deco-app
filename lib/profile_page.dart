@@ -1138,63 +1138,66 @@ class _ProfilePageState extends State<ProfilePage> with TickerProviderStateMixin
         return;
       }
 
-      // 3. Anonimizza i PAGAMENTI (mantenuti per contabilità del salone)
-      await supabase
-          .from('PAGAMENTI')
-          .update({'user_id': null})
+      // 3. Recupera tutti gli appuntamenti dell'utente (passati)
+      final appuntamenti = await supabase
+          .from('APPUNTAMENTI')
+          .select('id')
           .eq('user_id', userId);
 
-      // 4. Anonimizza gli APPUNTAMENTI passati (storico salone)
+      // 4. Per ogni appuntamento, elimina PAGAMENTI e APPUNTAMENTI_SERVIZI
+      for (final app in appuntamenti) {
+        final appId = app['id'];
+        await supabase.from('PAGAMENTI').delete().eq('appuntamento_id', appId);
+        await supabase.from('APPUNTAMENTI_SERVIZI').delete().eq('appuntamento_id', appId);
+      }
+
+      // 5. Elimina gli APPUNTAMENTI passati
       await supabase
           .from('APPUNTAMENTI')
-          .update({'user_id': null})
+          .delete()
           .eq('user_id', userId);
 
-      // 5. Elimina USERS_CREDITI
+      // 6. Elimina USERS_CREDITI
       await supabase
           .from('USERS_CREDITI')
           .delete()
-          .eq('user_id', userId);
+          .eq('users_id', userId);
 
-      // 6. Elimina USERS_SEGNALAZIONI
+      // 7. Elimina USERS_SEGNALAZIONI
       await supabase
           .from('USERS_SEGNALAZIONI')
           .delete()
-          .eq('user_id', userId);
+          .eq('users_id', userId);
 
-      // 7. Elimina USER_TOKENS e user_tokens
-      await supabase
-          .from('USER_TOKENS')
-          .delete()
-          .eq('user_id', userId);
+      // 8. Elimina user_tokens (user_id è text = uid Firebase)
       await supabase
           .from('user_tokens')
           .delete()
-          .eq('user_id', userId);
+          .eq('user_id', user.uid);
 
-      // 8. Elimina NOTIFICATION_LOGS e user_notifications
+      // 9. Elimina notification_queue e user_notifications
+      await supabase
+          .from('notification_queue')
+          .delete()
+          .eq('user_id', userId);
       await supabase
           .from('user_notifications')
           .delete()
           .eq('user_id', userId);
-      await supabase
-          .from('NOTIFICATION_LOGS')
-          .delete()
-          .eq('user_id', userId);
 
-      // 9. Elimina MATRIMONIO_RICHIESTE
+      // 10. Elimina MATRIMONIO_RICHIESTE
       await supabase
           .from('MATRIMONIO_RICHIESTE')
           .delete()
           .eq('user_id', userId);
 
-      // 10. Elimina l'utente da USERS
+      // 11. Elimina l'utente da USERS
       await supabase
           .from('USERS')
           .delete()
           .eq('uid', user.uid);
 
-      // 11. Elimina utente da Firebase Auth
+      // 12. Elimina utente da Firebase Auth
       await user.delete();
 
       if (mounted) {
