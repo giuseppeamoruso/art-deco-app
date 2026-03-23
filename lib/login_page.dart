@@ -261,7 +261,7 @@ class _LoginPageState extends State<LoginPage> {
 
       final GoogleSignIn googleSignIn = Platform.isIOS
           ? GoogleSignIn(
-        clientId: '1025005736352-g9bc0uddu4jch9jhicrqpb076089l487.apps.googleusercontent.com',
+        clientId: '1025005736352-cfsp5pr0ctmutgki3d0p3dv96c4s7bv7.apps.googleusercontent.com',
       )
           : GoogleSignIn();
 
