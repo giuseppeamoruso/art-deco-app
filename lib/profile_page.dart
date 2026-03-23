@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'login_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -1013,12 +1014,125 @@ class _ProfilePageState extends State<ProfilePage> with TickerProviderStateMixin
                     'Data registrazione',
                     '${user!.metadata.creationTime!.day}/${user!.metadata.creationTime!.month}/${user!.metadata.creationTime!.year}',
                   ),
+                const SizedBox(height: 24),
+                const Divider(color: Colors.white12),
+                const SizedBox(height: 16),
+                // ✅ Pulsante elimina account
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _showDeleteAccountDialog,
+                    icon: const Icon(Icons.delete_forever, color: Colors.red),
+                    label: const Text(
+                      'Elimina Account',
+                      style: TextStyle(color: Colors.red, fontSize: 15),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Colors.red),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
         ],
       ),
     );
+  }
+
+  // ✅ Dialogo conferma eliminazione account
+  void _showDeleteAccountDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF2d2d2d),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: Colors.red, size: 26),
+              SizedBox(width: 8),
+              Text('Elimina Account', style: TextStyle(color: Colors.white)),
+            ],
+          ),
+          content: const Text(
+            'Questa azione è irreversibile. Tutti i tuoi dati, appuntamenti e storico verranno eliminati definitivamente.\n\nSei sicuro di voler continuare?',
+            style: TextStyle(color: Colors.white70),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Annulla', style: TextStyle(color: Colors.white54)),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _deleteAccount();
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Elimina definitivamente'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // ✅ Eliminazione account completa
+  Future<void> _deleteAccount() async {
+    final user = firebase_auth.FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      // Mostra loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(color: Colors.white),
+        ),
+      );
+
+      final supabase = Supabase.instance.client;
+
+      // 1. Elimina dati utente da Supabase
+      await supabase.from('USERS').delete().eq('uid', user.uid);
+
+      // 2. Elimina utente da Firebase Auth
+      await user.delete();
+
+      if (mounted) {
+        Navigator.of(context).pop(); // chiudi loading
+        // 3. Torna al login
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const LoginPage()),
+              (route) => false,
+        );
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Account eliminato con successo'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context).pop(); // chiudi loading
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Errore durante l\'eliminazione: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Widget _buildInfoRow(String label, String value) {
