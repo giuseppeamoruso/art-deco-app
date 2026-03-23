@@ -1060,7 +1060,7 @@ class _ProfilePageState extends State<ProfilePage> with TickerProviderStateMixin
             ],
           ),
           content: const Text(
-            'Questa azione è irreversibile. Tutti i tuoi dati, appuntamenti e storico verranno eliminati definitivamente.\n\nSei sicuro di voler continuare?',
+            'Questa azione è irreversibile.\n\nI tuoi dati personali verranno eliminati. Lo storico dei pagamenti verrà mantenuto in forma anonima per esigenze contabili del salone.\n\nSei sicuro di voler continuare?',
             style: TextStyle(color: Colors.white70),
           ),
           actions: [
@@ -1090,6 +1090,8 @@ class _ProfilePageState extends State<ProfilePage> with TickerProviderStateMixin
     final user = firebase_auth.FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
+    final supabase = Supabase.instance.client;
+
     try {
       // Mostra loading
       showDialog(
@@ -1100,17 +1102,103 @@ class _ProfilePageState extends State<ProfilePage> with TickerProviderStateMixin
         ),
       );
 
-      final supabase = Supabase.instance.client;
+      // 1. Recupera l'ID numerico dell'utente dalla tabella USERS
+      final userRecord = await supabase
+          .from('USERS')
+          .select('id')
+          .eq('uid', user.uid)
+          .maybeSingle();
 
-      // 1. Elimina dati utente da Supabase
-      await supabase.from('USERS').delete().eq('uid', user.uid);
+      if (userRecord == null) {
+        if (mounted) Navigator.of(context).pop();
+        return;
+      }
 
-      // 2. Elimina utente da Firebase Auth
+      final userId = userRecord['id'];
+      final today = DateTime.now().toIso8601String().split('T')[0];
+
+      // 2. Controlla se esistono appuntamenti futuri
+      final futureAppointments = await supabase
+          .from('APPUNTAMENTI')
+          .select('id')
+          .eq('user_id', userId)
+          .gte('data', today);
+
+      if (futureAppointments.isNotEmpty) {
+        if (mounted) {
+          Navigator.of(context).pop(); // chiudi loading
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Non puoi eliminare l\'account con appuntamenti attivi. Cancella prima i tuoi appuntamenti.'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 4),
+            ),
+          );
+        }
+        return;
+      }
+
+      // 3. Anonimizza i PAGAMENTI (mantenuti per contabilità del salone)
+      await supabase
+          .from('PAGAMENTI')
+          .update({'user_id': null})
+          .eq('user_id', userId);
+
+      // 4. Anonimizza gli APPUNTAMENTI passati (storico salone)
+      await supabase
+          .from('APPUNTAMENTI')
+          .update({'user_id': null})
+          .eq('user_id', userId);
+
+      // 5. Elimina USERS_CREDITI
+      await supabase
+          .from('USERS_CREDITI')
+          .delete()
+          .eq('user_id', userId);
+
+      // 6. Elimina USERS_SEGNALAZIONI
+      await supabase
+          .from('USERS_SEGNALAZIONI')
+          .delete()
+          .eq('user_id', userId);
+
+      // 7. Elimina USER_TOKENS e user_tokens
+      await supabase
+          .from('USER_TOKENS')
+          .delete()
+          .eq('user_id', userId);
+      await supabase
+          .from('user_tokens')
+          .delete()
+          .eq('user_id', userId);
+
+      // 8. Elimina NOTIFICATION_LOGS e user_notifications
+      await supabase
+          .from('user_notifications')
+          .delete()
+          .eq('user_id', userId);
+      await supabase
+          .from('NOTIFICATION_LOGS')
+          .delete()
+          .eq('user_id', userId);
+
+      // 9. Elimina MATRIMONIO_RICHIESTE
+      await supabase
+          .from('MATRIMONIO_RICHIESTE')
+          .delete()
+          .eq('user_id', userId);
+
+      // 10. Elimina l'utente da USERS
+      await supabase
+          .from('USERS')
+          .delete()
+          .eq('uid', user.uid);
+
+      // 11. Elimina utente da Firebase Auth
       await user.delete();
 
       if (mounted) {
         Navigator.of(context).pop(); // chiudi loading
-        // 3. Torna al login
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (context) => const LoginPage()),
               (route) => false,
@@ -1123,6 +1211,7 @@ class _ProfilePageState extends State<ProfilePage> with TickerProviderStateMixin
         );
       }
     } catch (e) {
+      print('❌ Errore eliminazione account: $e');
       if (mounted) {
         Navigator.of(context).pop(); // chiudi loading
         ScaffoldMessenger.of(context).showSnackBar(
