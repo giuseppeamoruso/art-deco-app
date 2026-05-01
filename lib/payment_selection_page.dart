@@ -175,10 +175,10 @@ class _PaymentSelectionPageState extends State<PaymentSelectionPage> {
     return appointmentId;
   }
 
+  // Crea un nuovo record pagamento (INSERT)
   Future<void> _createPaymentRecord(int appointmentId, String method, String status, String? paymentId) async {
     final supabase = Supabase.instance.client;
 
-    // Prepara i dati base
     Map<String, dynamic> paymentData = {
       'appuntamento_id': appointmentId,
       'metodo_pagamento': method,
@@ -186,18 +186,33 @@ class _PaymentSelectionPageState extends State<PaymentSelectionPage> {
       'importo': widget.totalPrice,
     };
 
-    // Aggiungi payment ID in base al metodo
     if (method == 'stripe') {
       paymentData['stripe_payment_intent_id'] = paymentId;
     } else if (method == 'unicredit') {
       paymentData['unicredit_payment_id'] = paymentId;
     }
 
+    await supabase.from('PAGAMENTI').insert(paymentData);
+    print('✅ Record pagamento creato: $method - $status');
+  }
+
+  // Aggiorna il record pagamento esistente a "completato" (UPDATE)
+  Future<void> _confirmPaymentRecord(int appointmentId, String method, String? paymentId) async {
+    final supabase = Supabase.instance.client;
+
+    final Map<String, dynamic> updates = {'stato': 'completato'};
+    if (method == 'unicredit' && paymentId != null) {
+      updates['unicredit_payment_id'] = paymentId;
+    } else if (method == 'stripe' && paymentId != null) {
+      updates['stripe_payment_intent_id'] = paymentId;
+    }
+
     await supabase
         .from('PAGAMENTI')
-        .insert(paymentData);
+        .update(updates)
+        .eq('appuntamento_id', appointmentId);
 
-    print('✅ Record pagamento creato: $method - $status');
+    print('✅ Record pagamento confermato: $method - completato');
   }
 
   Future<void> _selectPaymentInLoco() async {
@@ -280,10 +295,15 @@ class _PaymentSelectionPageState extends State<PaymentSelectionPage> {
     setState(() => _isBooking = true);
 
     try {
-      // Crea appuntamento
+      // 1. Crea appuntamento
       final appointmentId = await _createAppointment();
 
-      // Naviga a UniCredit con l'ID appuntamento
+      // 2. Crea SUBITO il record pagamento in "in_attesa"
+      //    → l'admin vede già che è atteso un pagamento online
+      //    → la conferma farà solo un UPDATE, molto più affidabile
+      await _createPaymentRecord(appointmentId, 'unicredit', 'in_attesa', null);
+      print('✅ Record PAGAMENTI creato in "in_attesa" per appuntamento $appointmentId');
+
       if (mounted) {
         setState(() => _isBooking = false);
 
@@ -294,11 +314,11 @@ class _PaymentSelectionPageState extends State<PaymentSelectionPage> {
               totalPrice: widget.totalPrice,
               description: 'Appuntamento ${_formatDate(widget.selectedDate)} alle ${widget.selectedTimeSlot}',
               onPaymentSuccess: (paymentId) async {
-                // Aggiorna record pagamento
-                await _createPaymentRecord(appointmentId, 'unicredit', 'completato', paymentId);
+                // Solo UPDATE: il record esiste già
+                await _confirmPaymentRecord(appointmentId, 'unicredit', paymentId);
               },
               onPaymentFailure: () async {
-                // Elimina appuntamento se pagamento fallisce
+                // Elimina record pagamento + appuntamento
                 await _cancelAppointment(appointmentId);
               },
             ),
@@ -306,7 +326,6 @@ class _PaymentSelectionPageState extends State<PaymentSelectionPage> {
         );
 
         if (result == true) {
-          // Pagamento completato con successo
           _showSuccessDialog(
             'Pagamento completato!',
             'Il tuo appuntamento è stato prenotato e pagato.\nRiceverai conferma via email.',
@@ -327,6 +346,12 @@ class _PaymentSelectionPageState extends State<PaymentSelectionPage> {
     try {
       final supabase = Supabase.instance.client;
 
+      // Elimina prima il record pagamento (se esiste)
+      await supabase
+          .from('PAGAMENTI')
+          .delete()
+          .eq('appuntamento_id', appointmentId);
+
       // Elimina servizi collegati
       await supabase
           .from('APPUNTAMENTI_SERVIZI')
@@ -339,7 +364,7 @@ class _PaymentSelectionPageState extends State<PaymentSelectionPage> {
           .delete()
           .eq('id', appointmentId);
 
-      print('✅ Appuntamento $appointmentId cancellato');
+      print('✅ Appuntamento $appointmentId e record pagamento cancellati');
     } catch (e) {
       print('❌ Errore cancellazione appuntamento: $e');
     }

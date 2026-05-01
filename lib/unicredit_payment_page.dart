@@ -6,6 +6,8 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'main.dart';
+
 class UniCreditPaymentPage extends StatefulWidget {
   final int appointmentId;
   final double totalPrice;
@@ -26,16 +28,34 @@ class UniCreditPaymentPage extends StatefulWidget {
   State<UniCreditPaymentPage> createState() => _UniCreditPaymentPageState();
 }
 
-class _UniCreditPaymentPageState extends State<UniCreditPaymentPage> {
+class _UniCreditPaymentPageState extends State<UniCreditPaymentPage>
+    with WidgetsBindingObserver {
   bool _isInitializing = false;
   String? _errorMessage;
   String? _orderId;
   String? _paymentId;
+  bool _paymentConfirmed = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initializePayment();
+  }
+
+  // 🔧 FIX: quando l'app torna in foreground dal browser, controlla subito
+  // lo stato del pagamento senza aspettare il prossimo tick del polling (5s).
+  // Questo cattura i casi in cui il deep link è stato perso durante il restart.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (!_paymentConfirmed && !paymentCompletedGlobally && _orderId != null) {
+        print('📱 App ripresa dal browser - controllo immediato stato pagamento');
+        Future.delayed(const Duration(milliseconds: 800), () {
+          _checkPaymentStatus();
+        });
+      }
+    }
   }
 
   Future<void> _initializePayment() async {
@@ -167,6 +187,7 @@ class _UniCreditPaymentPageState extends State<UniCreditPaymentPage> {
   }
 
   Future<void> _checkPaymentStatus() async {
+    if (_paymentConfirmed || paymentCompletedGlobally) return;
     if (_orderId == null) return;
 
     try {
@@ -180,7 +201,7 @@ class _UniCreditPaymentPageState extends State<UniCreditPaymentPage> {
         if (data['success'] == true && data['payment_status'] == 'completed') {
           // Pagamento completato!
           _pollingTimer?.cancel();
-
+          _paymentConfirmed = true; // ✅ FIX: segna pagamento come confermato
           final paymentId = data['payment_id'] as String;
           await widget.onPaymentSuccess(paymentId);
 
@@ -189,7 +210,8 @@ class _UniCreditPaymentPageState extends State<UniCreditPaymentPage> {
           }
 
         } else if (data['success'] == true && data['payment_status'] == 'failed') {
-          // Pagamento fallito
+          // ✅ FIX: cancella SOLO se il pagamento non è già stato confermato
+          if (_paymentConfirmed) return;
           _pollingTimer?.cancel();
           await widget.onPaymentFailure();
           if (mounted) {
@@ -200,11 +222,12 @@ class _UniCreditPaymentPageState extends State<UniCreditPaymentPage> {
       }
     } catch (e) {
       print('⚠️ Errore verifica stato pagamento: $e');
-      // Continua il polling anche in caso di errore
+      // ✅ FIX: in caso di errore di rete, continua il polling senza cancellare
     }
   }
 
   void _showTimeoutDialog() {
+    // ✅ FIX: il timeout mostra solo un avviso, non cancella l'appuntamento
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -260,6 +283,7 @@ class _UniCreditPaymentPageState extends State<UniCreditPaymentPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pollingTimer?.cancel();
     super.dispose();
   }
@@ -295,6 +319,12 @@ class _UniCreditPaymentPageState extends State<UniCreditPaymentPage> {
                   ),
                   TextButton(
                     onPressed: () {
+                      // ✅ FIX: non cancellare se il pagamento è già confermato
+                      if (_paymentConfirmed) {
+                        Navigator.of(context).pop();
+                        Navigator.of(context).pop(false);
+                        return;
+                      }
                       _pollingTimer?.cancel();
                       widget.onPaymentFailure();
                       Navigator.of(context).pop();
@@ -331,15 +361,15 @@ class _UniCreditPaymentPageState extends State<UniCreditPaymentPage> {
                   textAlign: TextAlign.center,
                 ),
               ] else if (_errorMessage != null) ...[
-                Icon(
+                const Icon(
                   Icons.error_outline,
                   color: Colors.red,
                   size: 64,
                 ),
                 const SizedBox(height: 24),
-                Text(
+                const Text(
                   'Errore',
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Colors.white,
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
@@ -370,7 +400,7 @@ class _UniCreditPaymentPageState extends State<UniCreditPaymentPage> {
                   ),
                 ),
               ] else if (_pollingTimer != null && _pollingTimer!.isActive) ...[
-                Icon(
+                const Icon(
                   Icons.schedule,
                   color: Colors.blue,
                   size: 64,

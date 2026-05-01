@@ -15,7 +15,7 @@ import 'package:intl/date_symbol_data_local.dart';
 // 🆕 Import per gestire i deep link
 import 'package:app_links/app_links.dart';
 import 'dart:async';
-
+bool paymentCompletedGlobally = false;
 // ✅ Configurazione Supabase
 const String supabaseUrl = 'https://fykszvedjcgurryynhha.supabase.co';
 const String supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ5a3N6dmVkamNndXJyeXluaGhhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYxODc1ODksImV4cCI6MjA3MTc2MzU4OX0.H_HOV90GkbdZ_0Ue5ml781Qm1q8N6eukcDgXHAqE0VY';
@@ -157,16 +157,18 @@ class _AuthWrapperState extends State<AuthWrapper> {
     print('   Schema: ${uri.scheme}');    // "artdeco"
     print('   Host: ${uri.host}');        // "payment"
     print('   Path: ${uri.path}');        // "/success" o "/error"
-    print('   Parametri: ${uri.queryParameters}'); // {"order_id": "123"}
+    print('   Parametri: ${uri.queryParameters}'); // {"order_id": "...", "payment_id": "..."}
 
     // Controlla che sia un nostro deep link di pagamento
     if (uri.scheme == 'artdeco' && uri.host == 'payment') {
       final orderId = uri.queryParameters['order_id'];
+      // 🔧 FIX: estrae anche payment_id dal deep link
+      final paymentId = uri.queryParameters['payment_id'];
 
       if (uri.path == '/success') {
         // ✅ PAGAMENTO RIUSCITO
-        print('✅ Pagamento completato! Order ID: $orderId');
-        _onPaymentSuccess(orderId);
+        print('✅ Pagamento completato! Order ID: $orderId | Payment ID: $paymentId');
+        _onPaymentSuccess(orderId, paymentId);
 
       } else if (uri.path == '/error') {
         // ❌ PAGAMENTO FALLITO
@@ -176,8 +178,93 @@ class _AuthWrapperState extends State<AuthWrapper> {
     }
   }
 
+  // 🔧 FIX: salva il record in PAGAMENTI se non esiste già.
+  // Chiamato dal deep link quando il polling non ha fatto in tempo a farlo.
+  // Ritenta fino a 5 volte con attesa crescente per gestire reti instabili.
+  Future<void> _savePaymentRecordFromDeepLink(String orderId, String? paymentId) async {
+    // Il formato di orderId è: APP_{appointmentId}_{timestamp}
+    final parts = orderId.split('_');
+    if (parts.length < 2) {
+      print('⚠️ orderId non parsabile: $orderId');
+      return;
+    }
+    final appointmentId = int.tryParse(parts[1]);
+    if (appointmentId == null) {
+      print('⚠️ appointmentId non valido in orderId: $orderId');
+      return;
+    }
+
+    const maxAttempts = 5;
+    const delays = [2, 4, 8, 16, 30]; // secondi tra un tentativo e l'altro
+
+    for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        print('💾 Tentativo $attempt/$maxAttempts salvataggio PAGAMENTI (appuntamento $appointmentId)...');
+
+        final supabase = Supabase.instance.client;
+
+        // Controlla se esiste già un record (il polling potrebbe averlo già creato)
+        final existing = await supabase
+            .from('PAGAMENTI')
+            .select('id, stato')
+            .eq('appuntamento_id', appointmentId)
+            .maybeSingle();
+
+        if (existing != null) {
+          // Record già presente: aggiorna solo stato e payment_id
+          final Map<String, dynamic> updates = {'stato': 'completato'};
+          if (paymentId != null && paymentId.isNotEmpty) {
+            updates['unicredit_payment_id'] = paymentId;
+          }
+          await supabase
+              .from('PAGAMENTI')
+              .update(updates)
+              .eq('appuntamento_id', appointmentId);
+          print('✅ PAGAMENTI aggiornato via deep link (tentativo $attempt) per appuntamento $appointmentId');
+        } else {
+          // Nessun record: recupera il prezzo dall'appuntamento e crea il record
+          final appointment = await supabase
+              .from('APPUNTAMENTI')
+              .select('prezzo_totale')
+              .eq('id', appointmentId)
+              .maybeSingle();
+
+          final importo = (appointment?['prezzo_totale'] as num?)?.toDouble() ?? 0.0;
+
+          await supabase.from('PAGAMENTI').insert({
+            'appuntamento_id': appointmentId,
+            'metodo_pagamento': 'unicredit',
+            'stato': 'completato',
+            'importo': importo,
+            if (paymentId != null && paymentId.isNotEmpty)
+              'unicredit_payment_id': paymentId,
+          });
+          print('✅ Nuovo record PAGAMENTI creato via deep link (tentativo $attempt) per appuntamento $appointmentId (€$importo)');
+        }
+
+        return; // Successo: esci dal loop
+      } catch (e) {
+        print('❌ Tentativo $attempt/$maxAttempts fallito: $e');
+        if (attempt < maxAttempts) {
+          final waitSec = delays[attempt - 1];
+          print('⏳ Riprovo tra ${waitSec}s...');
+          await Future.delayed(Duration(seconds: waitSec));
+        } else {
+          print('❌ Tutti i tentativi esauriti per appuntamento $appointmentId. Il record non è stato salvato.');
+        }
+      }
+    }
+  }
+
   // 🆕 Cosa fare quando il pagamento va a buon fine
-  void _onPaymentSuccess(String? orderId) {
+  void _onPaymentSuccess(String? orderId, String? paymentId) {
+    paymentCompletedGlobally = true;
+
+    // 🔧 FIX: salva su PAGAMENTI dal deep link (nel caso il polling non ci sia arrivato)
+    if (orderId != null) {
+      _savePaymentRecordFromDeepLink(orderId, paymentId);
+    }
+
     // Mostra un dialog di successo sopra qualunque schermata sia aperta
     final context = navigatorKey.currentContext;
     if (context == null) return;

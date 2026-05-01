@@ -473,12 +473,16 @@ class _AdminAppointmentsPageState extends State<AdminAppointmentsPage> with Sing
     final method = payment['metodo_pagamento'];
     final status = payment['stato'];
 
-    if (method == 'stripe' && status == 'completato') {
+    if ((method == 'stripe' || method == 'unicredit') && status == 'completato') {
       return 'Pagato Online';
     } else if (method == 'in_loco' && status == 'completato') {
       return 'Pagato in Loco';
+    } else if ((method == 'stripe' || method == 'unicredit') && status == 'in_attesa') {
+      return 'In attesa pagamento online';
     } else if (method == 'in_loco' && status == 'in_attesa') {
       return 'Da pagare';
+    } else if ((method == 'stripe' || method == 'unicredit') && status == 'failed') {
+      return 'Pagamento Fallito';
     }
     return 'Da pagare';
   }
@@ -1076,12 +1080,16 @@ class _AdminAppointmentsPageState extends State<AdminAppointmentsPage> with Sing
     final method = payment['metodo_pagamento'];
     final status = payment['stato'];
 
-    if (method == 'stripe' && status == 'completato') {
-      return 'Pagato';
+    if ((method == 'stripe' || method == 'unicredit') && status == 'completato') {
+      return 'Pagato Online';
     } else if (method == 'in_loco' && status == 'completato') {
       return 'Pagato';
+    } else if ((method == 'stripe' || method == 'unicredit') && status == 'in_attesa') {
+      return 'In attesa online';
     } else if (method == 'in_loco' && status == 'in_attesa') {
       return 'Da pagare';
+    } else if ((method == 'stripe' || method == 'unicredit') && status == 'failed') {
+      return 'Fallito';
     }
     return 'Da pagare';
   }
@@ -1092,8 +1100,12 @@ class _AdminAppointmentsPageState extends State<AdminAppointmentsPage> with Sing
     final method = payment['metodo_pagamento'];
     final status = payment['stato'];
 
-    if ((method == 'stripe' || method == 'in_loco') && status == 'completato') {
+    if ((method == 'stripe' || method == 'unicredit' || method == 'in_loco') && status == 'completato') {
       return Colors.green;
+    } else if ((method == 'stripe' || method == 'unicredit') && status == 'failed') {
+      return Colors.red;
+    } else if ((method == 'stripe' || method == 'unicredit') && status == 'in_attesa') {
+      return Colors.blue;
     } else if (method == 'in_loco' && status == 'in_attesa') {
       return Colors.orange;
     }
