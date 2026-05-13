@@ -44,12 +44,57 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
+  // 🔐 Autentica anche su Supabase per abilitare RLS
+  Future<String?> _signInToSupabase({
+    String? googleIdToken,
+    String? googleAccessToken,
+    String? appleIdToken,
+    String? email,
+    String? password,
+  }) async {
+    final supabase = Supabase.instance.client;
+    try {
+      AuthResponse? response;
+      if (googleIdToken != null) {
+        response = await supabase.auth.signInWithIdToken(
+          provider: OAuthProvider.google,
+          idToken: googleIdToken,
+          accessToken: googleAccessToken,
+        );
+      } else if (appleIdToken != null) {
+        response = await supabase.auth.signInWithIdToken(
+          provider: OAuthProvider.apple,
+          idToken: appleIdToken,
+        );
+      } else if (email != null && password != null) {
+        try {
+          response = await supabase.auth.signInWithPassword(
+            email: email,
+            password: password,
+          );
+        } catch (_) {
+          response = await supabase.auth.signUp(
+            email: email,
+            password: password,
+          );
+        }
+      }
+      final uid = response?.user?.id;
+      print('✅ Supabase auth UID: $uid');
+      return uid;
+    } catch (e) {
+      print('⚠️ Supabase auth (non bloccante): $e');
+      return null;
+    }
+  }
+
   // 🔥 Sincronizza utente con Supabase
   Future<void> syncUserWithSupabase({
     String? nome,
     String? cognome,
     String? telefono,
     String? email,
+    String? supabaseUid,
   }) async {
     final authUser = firebase_auth.FirebaseAuth.instance.currentUser;
     final supabase = Supabase.instance.client;
@@ -73,6 +118,14 @@ class _LoginPageState extends State<LoginPage> {
       print('🔍 Utente esistente: ${existing != null ? 'SÌ' : 'NO'}');
 
       if (existing != null) {
+        // Aggiorna supabase_uid se non presente
+        if (supabaseUid != null && existing['supabase_uid'] == null) {
+          await supabase
+              .from('USERS')
+              .update({'supabase_uid': supabaseUid})
+              .eq('uid', userId);
+          print('✅ supabase_uid aggiornato');
+        }
         print('✅ Utente già presente in Supabase');
         return;
       }
@@ -80,6 +133,7 @@ class _LoginPageState extends State<LoginPage> {
       // Prepara i dati per l'inserimento
       final userData = {
         'uid': userId,
+        'supabase_uid': supabaseUid,
         'nome': nome ?? authUser.displayName?.split(' ').first ?? 'Utente',
         'cognome': cognome ?? (authUser.displayName?.split(' ').length != null && authUser.displayName!.split(' ').length > 1
             ? authUser.displayName!.split(' ').skip(1).join(' ')
@@ -291,6 +345,12 @@ class _LoginPageState extends State<LoginPage> {
       print('✅ Accesso Firebase completato: ${userCredential.user?.uid}');
 
       if (userCredential.user != null) {
+        // 🔐 Autentica su Supabase con Google token
+        final supabaseUid = await _signInToSupabase(
+          googleIdToken: googleAuth.idToken,
+          googleAccessToken: googleAuth.accessToken,
+        );
+
         // Sincronizza con Supabase
         await syncUserWithSupabase(
           nome: googleUser.displayName?.split(' ').first,
@@ -299,6 +359,7 @@ class _LoginPageState extends State<LoginPage> {
               : null,
           email: googleUser.email,
           telefono: null,
+          supabaseUid: supabaseUid,
         );
 
         // ✅ Controlla ban e naviga
@@ -337,16 +398,17 @@ class _LoginPageState extends State<LoginPage> {
           .signInWithCredential(oauthCredential);
 
       if (userCredential.user != null) {
-        // Apple fornisce nome/cognome solo al PRIMO login
-        final fullName = appleCredential.givenName != null
-            ? '${appleCredential.givenName} ${appleCredential.familyName ?? ''}'.trim()
-            : null;
+        // 🔐 Autentica su Supabase con Apple token
+        final supabaseUid = await _signInToSupabase(
+          appleIdToken: appleCredential.identityToken,
+        );
 
         await syncUserWithSupabase(
           nome: appleCredential.givenName,
           cognome: appleCredential.familyName,
           email: appleCredential.email ?? userCredential.user?.email,
           telefono: null,
+          supabaseUid: supabaseUid,
         );
         await OneSignalPushService.loginUser(userCredential.user!.uid);
         await _checkUserRoleAndNavigate();
@@ -376,6 +438,11 @@ class _LoginPageState extends State<LoginPage> {
       );
 
       if (userCredential.user != null) {
+        // 🔐 Autentica su Supabase con email/password
+        await _signInToSupabase(
+          email: _loginEmailController.text.trim(),
+          password: _loginPasswordController.text,
+        );
         // ✅ Controlla ban e naviga
         await _checkUserRoleAndNavigate();
       }
@@ -437,11 +504,18 @@ class _LoginPageState extends State<LoginPage> {
 
         print('✅ Display name aggiornato');
 
+        // 🔐 Autentica su Supabase con email/password
+        final supabaseUid = await _signInToSupabase(
+          email: _emailController.text.trim(),
+          password: _passwordController.text,
+        );
+
         await syncUserWithSupabase(
           nome: _nomeController.text.trim(),
           cognome: _cognomeController.text.trim(),
           telefono: _telefonoController.text.trim(),
           email: _emailController.text.trim(),
+          supabaseUid: supabaseUid,
         );
 
         // ✅ Registra su OneSignal
