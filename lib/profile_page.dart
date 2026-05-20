@@ -467,9 +467,7 @@ class _ProfilePageState extends State<ProfilePage> with TickerProviderStateMixin
                   prefixIcon: const Icon(Icons.person_outline, color: Colors.white70),
                 ),
                 validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Il cognome è richiesto';
-                  }
+                  // Il cognome non è bloccante (utenti Google possono avere solo il nome)
                   return null;
                 },
               ),

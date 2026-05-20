@@ -169,6 +169,145 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
+  // 📱 Controlla se il profilo è incompleto (telefono mancante) e mostra dialog
+  Future<void> _checkAndPromptProfileCompletion() async {
+    try {
+      final user = firebase_auth.FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      final supabase = Supabase.instance.client;
+      final record = await supabase
+          .from('USERS')
+          .select('telefono, cognome')
+          .eq('uid', user.uid)
+          .maybeSingle();
+
+      if (record == null) return;
+
+      final telefono = (record['telefono'] as String?) ?? '';
+      if (telefono.trim().isNotEmpty) return; // profilo già completo
+
+      // Mostra dialog per inserire il telefono
+      if (!mounted) return;
+      final telefonoController = TextEditingController();
+      final cognomeController = TextEditingController(
+        text: (record['cognome'] as String?) ?? '',
+      );
+      final formKey = GlobalKey<FormState>();
+
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF2d2d2d),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Row(
+            children: [
+              Icon(Icons.person_outline, color: Colors.blue),
+              SizedBox(width: 8),
+              Text('Completa il profilo', style: TextStyle(color: Colors.white)),
+            ],
+          ),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Aggiungi il tuo numero di telefono per prenotare appuntamenti.',
+                  style: TextStyle(color: Colors.white70, fontSize: 14),
+                ),
+                const SizedBox(height: 16),
+                if ((record['cognome'] as String? ?? '').trim().isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: TextFormField(
+                      controller: cognomeController,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        labelText: 'Cognome',
+                        labelStyle: const TextStyle(color: Colors.white70),
+                        prefixIcon: const Icon(Icons.person_outline, color: Colors.white54),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: Colors.white30),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: Colors.blue),
+                        ),
+                        filled: true,
+                        fillColor: const Color(0xFF3d3d3d),
+                      ),
+                    ),
+                  ),
+                TextFormField(
+                  controller: telefonoController,
+                  keyboardType: TextInputType.phone,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    labelText: 'Numero di Telefono *',
+                    labelStyle: const TextStyle(color: Colors.white70),
+                    prefixIcon: const Icon(Icons.phone_outlined, color: Colors.white54),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Colors.white30),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Colors.blue),
+                    ),
+                    errorBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Colors.red),
+                    ),
+                    filled: true,
+                    fillColor: const Color(0xFF3d3d3d),
+                  ),
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) return 'Il telefono è obbligatorio';
+                    if (v.trim().length < 10) return 'Numero non valido (min 10 cifre)';
+                    return null;
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Dopo', style: TextStyle(color: Colors.white54)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+              onPressed: () async {
+                if (!formKey.currentState!.validate()) return;
+                try {
+                  final updates = <String, dynamic>{
+                    'telefono': telefonoController.text.trim(),
+                  };
+                  if (cognomeController.text.trim().isNotEmpty) {
+                    updates['cognome'] = cognomeController.text.trim();
+                  }
+                  await supabase
+                      .from('USERS')
+                      .update(updates)
+                      .eq('uid', user.uid);
+                  Navigator.of(ctx).pop();
+                } catch (e) {
+                  print('❌ Errore salvataggio telefono: $e');
+                }
+              },
+              child: const Text('Salva', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      print('❌ Errore check profilo: $e');
+    }
+  }
+
   // ✅ NUOVO: Controlla se l'utente è bannato (segnalazione livello 2)
   Future<bool> _checkIfBanned(String firebaseUid) async {
     try {
@@ -364,6 +503,11 @@ class _LoginPageState extends State<LoginPage> {
 
         // ✅ Controlla ban e naviga
         await _checkUserRoleAndNavigate();
+
+        // 📱 Se il telefono è mancante, mostra dialog di completamento profilo
+        if (mounted) {
+          await _checkAndPromptProfileCompletion();
+        }
       }
     } catch (e) {
       print('❌ Errore Google Sign-In: $e');
@@ -411,6 +555,11 @@ class _LoginPageState extends State<LoginPage> {
           supabaseUid: supabaseUid,
         );
         await OneSignalPushService.loginUser(userCredential.user!.uid);
+
+        // 📱 Se il telefono è mancante, mostra dialog di completamento profilo
+        if (mounted) {
+          await _checkAndPromptProfileCompletion();
+        }
         await _checkUserRoleAndNavigate();
       }
     } catch (e) {
