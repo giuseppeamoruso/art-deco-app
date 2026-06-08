@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'stylist_selection_page_final.dart';
+import 'booking_confirmation_page.dart';
 
 class DateTimeSelectionPage extends StatefulWidget {
   final String section;
   final List<Map<String, dynamic>> selectedServices;
   final Duration totalDuration;
   final double totalPrice;
+  final Map<String, dynamic> selectedStylist;
 
   const DateTimeSelectionPage({
     super.key,
@@ -14,6 +15,7 @@ class DateTimeSelectionPage extends StatefulWidget {
     required this.selectedServices,
     required this.totalDuration,
     required this.totalPrice,
+    required this.selectedStylist,
   });
 
   @override
@@ -155,35 +157,11 @@ class _DateTimeSelectionPageState extends State<DateTimeSelectionPage> {
   }
 
   Future<List<String>> _checkAvailability(DateTime date) async {
-    final supabase = Supabase.instance.client;
-    final sessoId = widget.section == 'uomo' ? 1 : 2;
     final dateString = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
 
     try {
-      // 1. Query per stylist del sesso giusto
-      final stylistSessoResponse = await supabase
-          .from('STYLIST_SESSO_TAGLIO')
-          .select('stylist_id')
-          .eq('sesso_id', sessoId);
-
-      List<int> stylistIds = stylistSessoResponse
-          .map<int>((s) => s['stylist_id'] as int)
-          .toList();
-
-      if (stylistIds.isEmpty) return [];
-
-      // 2. Filtra solo stylist non cancellati
-      final validStylistsResponse = await supabase
-          .from('STYLIST')
-          .select('id')
-          .inFilter('id', stylistIds)
-          .isFilter('deleted_at', null);
-
-      List<int> validStylistIds = validStylistsResponse
-          .map<int>((s) => s['id'] as int)
-          .toList();
-
-      if (validStylistIds.isEmpty) return [];
+      // Usa direttamente lo stylist scelto dall'utente
+      List<int> validStylistIds = [widget.selectedStylist['id'] as int];
 
       // 3. *** NUOVO: Controlla orari e eccezioni ***
       final eccezione = await _getEccezionePerData(date);
@@ -368,9 +346,8 @@ class _DateTimeSelectionPageState extends State<DateTimeSelectionPage> {
       }
     }
 
-    // 3. Controlla se almeno uno stylist è disponibile
-    int availableStylistCount = allStylistIds.length - unavailableStylistIds.length;
-    return availableStylistCount > 0;
+    // 3. Controlla se lo stylist scelto è disponibile
+    return !unavailableStylistIds.contains(widget.selectedStylist['id'] as int);
   }
 
   bool _isStylistInAssenza(
@@ -504,7 +481,7 @@ class _DateTimeSelectionPageState extends State<DateTimeSelectionPage> {
     });
   }
 
-  void _navigateToStylistSelection() {
+  void _navigateToConfirmation() {
     if (_selectedTimeSlot == null) {
       _showErrorMessage('Seleziona un orario per continuare');
       return;
@@ -512,13 +489,14 @@ class _DateTimeSelectionPageState extends State<DateTimeSelectionPage> {
 
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (context) => StylistSelectionPageFinal(
+        builder: (context) => BookingConfirmationPage(
           section: widget.section,
           selectedServices: widget.selectedServices,
           totalDuration: widget.totalDuration,
           totalPrice: widget.totalPrice,
           selectedDate: _selectedDate,
           selectedTimeSlot: _selectedTimeSlot!,
+          selectedStylist: widget.selectedStylist,
         ),
       ),
     );
@@ -541,13 +519,25 @@ class _DateTimeSelectionPageState extends State<DateTimeSelectionPage> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF2d2d2d),
         elevation: 0,
-        title: const Text(
-          'Seleziona Data e Ora',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-          ),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Seleziona Data e Ora',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            Text(
+              widget.selectedStylist['descrizione'] ?? '',
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 12,
+              ),
+            ),
+          ],
         ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
@@ -631,7 +621,7 @@ class _DateTimeSelectionPageState extends State<DateTimeSelectionPage> {
             width: double.infinity,
             height: 56,
             child: ElevatedButton(
-              onPressed: _navigateToStylistSelection,
+              onPressed: _navigateToConfirmation,
               style: ElevatedButton.styleFrom(
                 backgroundColor: widget.section == 'donna'
                     ? Colors.pink
@@ -643,7 +633,7 @@ class _DateTimeSelectionPageState extends State<DateTimeSelectionPage> {
                 elevation: 3,
               ),
               child: Text(
-                'Scegli Stylist - ${_formatDate(_selectedDate)} alle $_selectedTimeSlot',
+                'Conferma con ${widget.selectedStylist['descrizione']} - $_selectedTimeSlot',
                 style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.bold,

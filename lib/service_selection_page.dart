@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'datetime_selection_page.dart';
+import 'stylist_selection_page.dart';
 
 class ServiceSelectionPage extends StatefulWidget {
   final String section; // 'uomo' o 'donna'
@@ -106,7 +106,7 @@ class _ServiceSelectionPageState extends State<ServiceSelectionPage> {
 
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (context) => DateTimeSelectionPage(
+        builder: (context) => StylistSelectionPage(
           section: widget.section,
           selectedServices: _selectedServices,
           totalDuration: _totalDuration,
