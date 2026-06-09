@@ -1072,6 +1072,18 @@ class _AdminAppointmentsPageState extends State<AdminAppointmentsPage> with Sing
                 'read': false,
               });
 
+              // Inserisce anche in notification_queue: il polling
+              // la legge entro 30s e mostra la notifica locale sul device
+              // (funziona indipendentemente da OneSignal)
+              await supabase.from('notification_queue').insert({
+                'user_id': originalAppointment['user_id'],
+                'title': '📝 Appuntamento Modificato',
+                'body': 'Il tuo appuntamento è stato spostato a ${_formatDate(dateString)} alle $newTime',
+                'type': 'appointment_modified',
+                'sent': false,
+                'read': false,
+              });
+
               print('✅ Notifica salvata nel database');
             } catch (e) {
               print('⚠️ Errore salvataggio notifica DB: $e');
