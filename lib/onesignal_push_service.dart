@@ -71,7 +71,7 @@ class OneSignalPushService {
       final url = Uri.parse(
           'https://api.onesignal.com/apps/$appId/users/by/external_id/$externalId/identity/external_id');
       final response = await http.delete(url, headers: {
-        'Authorization': 'Basic $restApiKey',
+        'Authorization': 'Key $restApiKey',
       });
       if (response.statusCode == 200 || response.statusCode == 204) {
         print('🧹 External ID pre-cleaned ($externalId)');
@@ -191,7 +191,7 @@ class OneSignalPushService {
         url,
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Basic $restApiKey',
+          'Authorization': 'Key $restApiKey',
         },
         body: json.encode(body),
       );
@@ -200,6 +200,17 @@ class OneSignalPushService {
         print('✅ Notifica inviata con successo');
         print('   📊 Response: ${response.body}');
         return true;
+      } else if (response.statusCode == 400) {
+        // 400 con "No Subscriptions" = utente non ha device attivi, non è un errore critico
+        final decoded = json.decode(response.body);
+        final errors = decoded['errors'] as List? ?? [];
+        if (errors.any((e) => e.toString().contains('No Subscriptions'))) {
+          print('⚠️ Utente senza subscription attiva (nessun device registrato)');
+          return false;
+        }
+        print('❌ Errore invio notifica: ${response.statusCode}');
+        print('   📄 Body: ${response.body}');
+        return false;
       } else {
         print('❌ Errore invio notifica: ${response.statusCode}');
         print('   📄 Body: ${response.body}');
