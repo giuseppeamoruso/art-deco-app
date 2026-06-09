@@ -77,76 +77,53 @@ class _ServiceSelectionPageState extends State<ServiceSelectionPage> {
       _calculateTotals();
     });
 
-    // Solo per donna: se è un colore ritocco o colore totale, chiedi la piega
+    // Solo per donna: se è un colore ritocco o colore totale,
+    // aggiungi automaticamente la piega corrispondente alla lunghezza
     if (widget.section == 'donna') {
       final desc = (service['descrizione'] as String).toUpperCase();
       final isColore = desc.contains('COLORE RITOCCO') || desc.contains('COLORE TOTALE');
 
       if (isColore) {
-        // Chiedi solo se non è già stata selezionata una piega
         final haPiega = _selectedServices.any(
           (s) => (s['descrizione'] as String).toUpperCase().contains('PIEGA'),
         );
         if (!haPiega) {
-          await _showPiegaDialog();
+          _aggiungiPiegaAutomatica(desc);
         }
       }
     }
   }
 
-  Future<void> _showPiegaDialog() async {
-    final piegaServices = _services
-        .where((s) => (s['descrizione'] as String).toUpperCase().contains('PIEGA'))
-        .toList();
+  /// Aggiunge automaticamente la piega con la stessa lunghezza del colore selezionato
+  /// Es: "COLORE TOTALE CAPELLI CORTI" → aggiunge "PIEGA CAPELLI CORTI"
+  void _aggiungiPiegaAutomatica(String descColoreUpper) {
+    // Determina la lunghezza dal nome del servizio colore
+    String? lunghezza;
+    if (descColoreUpper.contains('CORTI')) {
+      lunghezza = 'CORTI';
+    } else if (descColoreUpper.contains('MEDI')) {
+      lunghezza = 'MEDI';
+    } else if (descColoreUpper.contains('LUNGHI')) {
+      lunghezza = 'LUNGHI';
+    }
 
-    if (piegaServices.isEmpty || !mounted) return;
+    if (lunghezza == null) return;
 
-    await showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF2d2d2d),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(
-          children: [
-            Icon(Icons.content_cut, color: Colors.pink),
-            SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'Aggiungi la piega?',
-                style: TextStyle(color: Colors.white, fontSize: 16),
-              ),
-            ),
-          ],
-        ),
-        content: const Text(
-          'Il servizio selezionato include una piega. Quale tipo vuoi aggiungere?',
-          style: TextStyle(color: Colors.white70, fontSize: 14),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Senza piega', style: TextStyle(color: Colors.white54)),
-          ),
-          ...piegaServices.map((piega) => ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.pink,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            ),
-            onPressed: () {
-              setState(() {
-                _selectedServices.add(piega);
-                _calculateTotals();
-              });
-              Navigator.of(ctx).pop();
-            },
-            child: Text(
-              piega['descrizione'],
-              style: const TextStyle(color: Colors.white, fontSize: 12),
-            ),
-          )),
-        ],
-      ),
+    // Trova la piega con la stessa lunghezza
+    final piega = _services.firstWhere(
+      (s) {
+        final d = (s['descrizione'] as String).toUpperCase();
+        return d.contains('PIEGA') && d.contains(lunghezza!);
+      },
+      orElse: () => {},
     );
+
+    if (piega.isEmpty) return;
+
+    setState(() {
+      _selectedServices.add(piega);
+      _calculateTotals();
+    });
   }
 
   void _calculateTotals() {
