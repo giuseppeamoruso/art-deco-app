@@ -73,11 +73,16 @@ class _DateTimeSelectionPageState extends State<DateTimeSelectionPage> {
         _isLoading = false;
       });
 
+      // Scrolla DOPO il rebuild finale (post isLoading=false)
+      // Il rebuild del loading resettava lo scroll a 0
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToSelectedDay());
+
       print('✅ Slot disponibili per ${_formatDate(_selectedDate)}: ${_availableTimeSlots.length}');
 
     } catch (e) {
       print('❌ Errore caricamento slot: $e');
       setState(() => _isLoading = false);
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToSelectedDay());
 
       if (mounted) {
         _showErrorMessage('Errore nel caricamento degli orari disponibili');
@@ -479,9 +484,7 @@ class _DateTimeSelectionPageState extends State<DateTimeSelectionPage> {
     setState(() {
       _selectedDate = date;
     });
-    _loadAvailableTimeSlots();
-    // Scrolla automaticamente alla data selezionata dopo il rebuild
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToSelectedDay());
+    _loadAvailableTimeSlots(); // lo scroll avviene alla fine del caricamento
   }
 
   /// Scrolla il calendario al giorno selezionato
