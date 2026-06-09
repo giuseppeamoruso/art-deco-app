@@ -47,8 +47,12 @@ class OneSignalPushService {
   /// 🔐 Registra utente con External ID (Firebase UID)
   static Future<void> loginUser(String firebaseUid) async {
     try {
+      // Pre-pulizia: rimuovi external_id da eventuali subscription precedenti
+      // per evitare il 409 "Alias claimed by another User"
+      await _clearExternalId(firebaseUid);
+
       await OneSignal.login(firebaseUid);
-      print('✅ Utente registrato su OneSignal: $firebaseUid');
+      print('✅ OneSignal login completato: $firebaseUid');
 
       // Ottieni Player ID e salvalo nel database
       final playerId = OneSignal.User.pushSubscription.id;
@@ -58,6 +62,27 @@ class OneSignalPushService {
       }
     } catch (e) {
       print('❌ Errore login OneSignal: $e');
+    }
+  }
+
+  /// 🧹 Rimuove external_id da vecchie subscription (previene 409)
+  static Future<void> _clearExternalId(String externalId) async {
+    try {
+      final url = Uri.parse(
+          'https://api.onesignal.com/apps/$appId/users/by/external_id/$externalId/identity/external_id');
+      final response = await http.delete(url, headers: {
+        'Authorization': 'Basic $restApiKey',
+      });
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        print('🧹 External ID pre-cleaned ($externalId)');
+      } else if (response.statusCode == 404) {
+        print('🆕 External ID non esistente, nessuna pulizia necessaria');
+      } else {
+        print('⚠️ Pre-clean risposta: ${response.statusCode}');
+      }
+    } catch (e) {
+      // Non bloccante - continua comunque con il login
+      print('⚠️ Pre-clean external_id (ignorato): $e');
     }
   }
 
@@ -84,15 +109,21 @@ class OneSignalPushService {
           .maybeSingle();
 
       if (userRecord != null) {
-        // Salva o aggiorna il Player ID
-        await supabase.from('user_tokens').upsert({
-          'user_id': userRecord['id'].toString(),
-          'fcm_token': playerId,
-          'platform': 'onesignal',
-          'active': true,
-          'updated_at': DateTime.now().toIso8601String(),
-        });
-        print('✅ Player ID salvato nel database');
+        final userId = userRecord['id'].toString();
+        // upsert su 'fcm_token': se lo stesso token era di un altro utente
+        // (es. stesso device, account diverso) lo aggiorna all'utente attuale.
+        // Risolve: duplicate key value violates unique constraint "user_tokens_fcm_token_key"
+        await supabase.from('user_tokens').upsert(
+          {
+            'user_id': userId,
+            'fcm_token': playerId,
+            'platform': 'onesignal',
+            'active': true,
+            'updated_at': DateTime.now().toIso8601String(),
+          },
+          onConflict: 'fcm_token',
+        );
+        print('✅ Player ID salvato nel database (user: $userId)');
       }
     } catch (e) {
       print('❌ Errore salvataggio Player ID: $e');
@@ -109,17 +140,52 @@ class OneSignalPushService {
     try {
       print('📤 Invio notifica a utente: $firebaseUid');
 
+      final supabase = Supabase.instance.client;
+
+      // Recupera player IDs dal DB: più affidabile del mapping OneSignal
+      // (bypassa il problema 409 / external_id claimed by another subscription)
+      List<String> playerIds = [];
+      try {
+        final userRecord = await supabase
+            .from('USERS')
+            .select('id')
+            .eq('uid', firebaseUid)
+            .maybeSingle();
+        if (userRecord != null) {
+          final tokens = await supabase
+              .from('user_tokens')
+              .select('fcm_token')
+              .eq('user_id', userRecord['id'].toString())
+              .eq('active', true);
+          playerIds = (tokens as List)
+              .map<String>((t) => t['fcm_token'] as String)
+              .toList();
+          print('📱 Player IDs trovati nel DB: $playerIds');
+        }
+      } catch (e) {
+        print('⚠️ Impossibile recuperare player IDs dal DB: $e');
+      }
+
       final url = Uri.parse('https://onesignal.com/api/v1/notifications');
 
-      final body = {
+      final Map<String, dynamic> body = {
         'app_id': appId,
-        'include_external_user_ids': [firebaseUid], // Usa External ID (Firebase UID)
         'headings': {'en': title},
         'contents': {'en': message},
         'android_channel_id': '06ca23a0-f14c-45d8-a5b8-69b0d8823024',
         'priority': 10,
         'data': additionalData ?? {},
       };
+
+      // Usa player IDs dal DB se disponibili (più affidabile),
+      // altrimenti fallback su external_user_id
+      if (playerIds.isNotEmpty) {
+        body['include_player_ids'] = playerIds;
+        print('📡 Invio via player_ids: $playerIds');
+      } else {
+        body['include_external_user_ids'] = [firebaseUid];
+        print('📡 Fallback: invio via external_user_id: $firebaseUid');
+      }
 
       final response = await http.post(
         url,
