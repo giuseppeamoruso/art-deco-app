@@ -57,20 +57,96 @@ class _ServiceSelectionPageState extends State<ServiceSelectionPage> {
     }
   }
 
-  void _toggleService(Map<String, dynamic> service) {
-    setState(() {
-      final existingIndex = _selectedServices.indexWhere(
-            (s) => s['id'] == service['id'],
-      );
+  Future<void> _toggleService(Map<String, dynamic> service) async {
+    final existingIndex = _selectedServices.indexWhere(
+      (s) => s['id'] == service['id'],
+    );
 
-      if (existingIndex >= 0) {
+    if (existingIndex >= 0) {
+      // Deseleziona
+      setState(() {
         _selectedServices.removeAt(existingIndex);
-      } else {
-        _selectedServices.add(service);
-      }
+        _calculateTotals();
+      });
+      return;
+    }
 
+    // Aggiunge il servizio
+    setState(() {
+      _selectedServices.add(service);
       _calculateTotals();
     });
+
+    // Solo per donna: se è un colore ritocco o colore totale, chiedi la piega
+    if (widget.section == 'donna') {
+      final desc = (service['descrizione'] as String).toUpperCase();
+      final isColore = desc.contains('COLORE RITOCCO') || desc.contains('COLORE TOTALE');
+
+      if (isColore) {
+        // Chiedi solo se non è già stata selezionata una piega
+        final haPiega = _selectedServices.any(
+          (s) => (s['descrizione'] as String).toUpperCase().contains('PIEGA'),
+        );
+        if (!haPiega) {
+          await _showPiegaDialog();
+        }
+      }
+    }
+  }
+
+  Future<void> _showPiegaDialog() async {
+    final piegaServices = _services
+        .where((s) => (s['descrizione'] as String).toUpperCase().contains('PIEGA'))
+        .toList();
+
+    if (piegaServices.isEmpty || !mounted) return;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF2d2d2d),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.content_cut, color: Colors.pink),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Aggiungi la piega?',
+                style: TextStyle(color: Colors.white, fontSize: 16),
+              ),
+            ),
+          ],
+        ),
+        content: const Text(
+          'Il servizio selezionato include una piega. Quale tipo vuoi aggiungere?',
+          style: TextStyle(color: Colors.white70, fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Senza piega', style: TextStyle(color: Colors.white54)),
+          ),
+          ...piegaServices.map((piega) => ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.pink,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            ),
+            onPressed: () {
+              setState(() {
+                _selectedServices.add(piega);
+                _calculateTotals();
+              });
+              Navigator.of(ctx).pop();
+            },
+            child: Text(
+              piega['descrizione'],
+              style: const TextStyle(color: Colors.white, fontSize: 12),
+            ),
+          )),
+        ],
+      ),
+    );
   }
 
   void _calculateTotals() {
