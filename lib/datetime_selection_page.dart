@@ -27,12 +27,19 @@ class _DateTimeSelectionPageState extends State<DateTimeSelectionPage> {
   DateTime _selectedDate = DateTime.now();
   String? _selectedTimeSlot;
   List<String> _availableTimeSlots = [];
+  final ScrollController _daysScrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
     _initializeSelectedDate();
     _loadAvailableTimeSlots();
+  }
+
+  @override
+  void dispose() {
+    _daysScrollController.dispose();
+    super.dispose();
   }
 
   void _initializeSelectedDate() {
@@ -473,6 +480,43 @@ class _DateTimeSelectionPageState extends State<DateTimeSelectionPage> {
       _selectedDate = date;
     });
     _loadAvailableTimeSlots();
+    // Scrolla automaticamente alla data selezionata dopo il rebuild
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToSelectedDay());
+  }
+
+  /// Scrolla il calendario al giorno selezionato
+  void _scrollToSelectedDay() {
+    if (!_daysScrollController.hasClients) return;
+
+    final today = DateTime.now();
+    final todayNorm = DateTime(today.year, today.month, today.day);
+    final lastDay = DateTime(_selectedDate.year, _selectedDate.month + 1, 0);
+
+    // Ricrea la stessa lista di _buildDaysForMonth
+    final List<DateTime> daysInMonth = [];
+    for (int day = 1; day <= lastDay.day; day++) {
+      final d = DateTime(_selectedDate.year, _selectedDate.month, day);
+      if (!d.isBefore(todayNorm) && d.weekday != 1 && d.weekday != 7) {
+        daysInMonth.add(d);
+      }
+    }
+
+    final index = daysInMonth.indexWhere((d) =>
+        d.day == _selectedDate.day &&
+        d.month == _selectedDate.month &&
+        d.year == _selectedDate.year);
+
+    if (index < 0) return;
+
+    const itemWidth = 65.0 + 10.0; // width + margin right
+    final targetOffset = index * itemWidth;
+    final maxExtent = _daysScrollController.position.maxScrollExtent;
+
+    _daysScrollController.animateTo(
+      targetOffset.clamp(0.0, maxExtent),
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
   }
 
   void _selectTimeSlot(String timeSlot) {
@@ -772,6 +816,7 @@ class _DateTimeSelectionPageState extends State<DateTimeSelectionPage> {
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
+      controller: _daysScrollController,
       child: Row(
         children: daysInMonth.map((date) {
           final isSelected = _selectedDate.day == date.day &&
