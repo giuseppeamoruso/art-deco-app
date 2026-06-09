@@ -166,25 +166,26 @@ class OneSignalPushService {
         print('⚠️ Impossibile recuperare player IDs dal DB: $e');
       }
 
-      final url = Uri.parse('https://onesignal.com/api/v1/notifications');
+      // OneSignal API v2 (richiesta dalle chiavi os_v2_app_...)
+      final url = Uri.parse('https://api.onesignal.com/notifications');
 
       final Map<String, dynamic> body = {
         'app_id': appId,
+        'target_channel': 'push',
         'headings': {'en': title},
         'contents': {'en': message},
-        'android_channel_id': '06ca23a0-f14c-45d8-a5b8-69b0d8823024',
         'priority': 10,
         'data': additionalData ?? {},
       };
 
-      // Usa player IDs dal DB se disponibili (più affidabile),
-      // altrimenti fallback su external_user_id
+      // API v2: player_ids → include_subscription_ids
+      //         external_user_id → include_aliases.external_id
       if (playerIds.isNotEmpty) {
-        body['include_player_ids'] = playerIds;
-        print('📡 Invio via player_ids: $playerIds');
+        body['include_subscription_ids'] = playerIds;
+        print('📡 Invio via subscription_ids (v2): $playerIds');
       } else {
-        body['include_external_user_ids'] = [firebaseUid];
-        print('📡 Fallback: invio via external_user_id: $firebaseUid');
+        body['include_aliases'] = {'external_id': [firebaseUid]};
+        print('📡 Fallback: invio via external_id (v2): $firebaseUid');
       }
 
       final response = await http.post(
@@ -201,10 +202,10 @@ class OneSignalPushService {
         print('   📊 Response: ${response.body}');
         return true;
       } else if (response.statusCode == 400) {
-        // 400 con "No Subscriptions" = utente non ha device attivi, non è un errore critico
+        // 400 con "No Subscriptions" = utente senza device attivi
         final decoded = json.decode(response.body);
-        final errors = decoded['errors'] as List? ?? [];
-        if (errors.any((e) => e.toString().contains('No Subscriptions'))) {
+        final errors = (decoded['errors'] as List? ?? []).toString();
+        if (errors.contains('No Subscriptions') || errors.contains('subscription')) {
           print('⚠️ Utente senza subscription attiva (nessun device registrato)');
           return false;
         }
