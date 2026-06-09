@@ -9,7 +9,7 @@ import 'dart:convert';
 class OneSignalPushService {
   // ✅ CHIAVI ONESIGNAL - ART DECÒ
   static const String appId = 'f6f03c5c-bb2d-4eb2-91b3-d5192747a10f';
-  static const String restApiKey = 'os_v2_app_63ydyxf3fvhlfent2umsor5bb5nbfln3beuujl4hiwxrgdmaqz23fmwhsprr6bnegtmp7thdqz7urib7w6xhuoqubivcre6z3vyjlyi';
+  static const String restApiKey = 'os_v2_app_63ydyxf3fvhlfent2umsor5bb5yl5gptqlxuiam7hjbabfqahypmfyd277nfccgpf256n6fpffseloevps5e7kmpt5hyc4rcj5cijta';
 
   /// 📱 Inizializza OneSignal
   static Future<void> initialize() async {
