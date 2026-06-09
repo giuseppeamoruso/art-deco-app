@@ -1,15 +1,13 @@
 import 'package:onesignal_flutter/onesignal_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 
 /// 🚀 Servizio completo per notifiche push OneSignal - ART DECÒ
-/// Tutte le chiavi sono già configurate e pronte all'uso
+/// L'invio avviene tramite Supabase Edge Function (chiave REST mai esposta nel client)
 class OneSignalPushService {
-  // ✅ CHIAVI ONESIGNAL - ART DECÒ
+  // App ID OneSignal (pubblico, non è un segreto)
   static const String appId = 'f6f03c5c-bb2d-4eb2-91b3-d5192747a10f';
-  static const String restApiKey = 'os_v2_app_63ydyxf3fvhlfent2umsor5bb5yl5gptqlxuiam7hjbabfqahypmfyd277nfccgpf256n6fpffseloevps5e7kmpt5hyc4rcj5cijta';
+  // ⚠️ La REST API Key è ora un secret Supabase — NON va più qui
 
   /// 📱 Inizializza OneSignal
   static Future<void> initialize() async {
@@ -47,10 +45,6 @@ class OneSignalPushService {
   /// 🔐 Registra utente con External ID (Firebase UID)
   static Future<void> loginUser(String firebaseUid) async {
     try {
-      // Pre-pulizia: rimuovi external_id da eventuali subscription precedenti
-      // per evitare il 409 "Alias claimed by another User"
-      await _clearExternalId(firebaseUid);
-
       await OneSignal.login(firebaseUid);
       print('✅ OneSignal login completato: $firebaseUid');
 
@@ -62,27 +56,6 @@ class OneSignalPushService {
       }
     } catch (e) {
       print('❌ Errore login OneSignal: $e');
-    }
-  }
-
-  /// 🧹 Rimuove external_id da vecchie subscription (previene 409)
-  static Future<void> _clearExternalId(String externalId) async {
-    try {
-      final url = Uri.parse(
-          'https://api.onesignal.com/apps/$appId/users/by/external_id/$externalId/identity/external_id');
-      final response = await http.delete(url, headers: {
-        'Authorization': 'Key $restApiKey',
-      });
-      if (response.statusCode == 200 || response.statusCode == 204) {
-        print('🧹 External ID pre-cleaned ($externalId)');
-      } else if (response.statusCode == 404) {
-        print('🆕 External ID non esistente, nessuna pulizia necessaria');
-      } else {
-        print('⚠️ Pre-clean risposta: ${response.statusCode}');
-      }
-    } catch (e) {
-      // Non bloccante - continua comunque con il login
-      print('⚠️ Pre-clean external_id (ignorato): $e');
     }
   }
 
@@ -130,7 +103,8 @@ class OneSignalPushService {
     }
   }
 
-  /// 📨 Invia notifica push a un utente specifico (tramite Firebase UID)
+  /// 📨 Invia notifica push a un utente specifico
+  /// La REST API key OneSignal è gestita lato server (Supabase Edge Function)
   static Future<bool> sendPushToUser({
     required String firebaseUid,
     required String title,
@@ -142,8 +116,7 @@ class OneSignalPushService {
 
       final supabase = Supabase.instance.client;
 
-      // Recupera player IDs dal DB: più affidabile del mapping OneSignal
-      // (bypassa il problema 409 / external_id claimed by another subscription)
+      // Recupera player IDs (subscription IDs) dal DB
       List<String> playerIds = [];
       try {
         final userRecord = await supabase
@@ -166,55 +139,37 @@ class OneSignalPushService {
         print('⚠️ Impossibile recuperare player IDs dal DB: $e');
       }
 
-      // OneSignal API v2 (richiesta dalle chiavi os_v2_app_...)
-      final url = Uri.parse('https://api.onesignal.com/notifications');
-
-      final Map<String, dynamic> body = {
-        'app_id': appId,
-        'target_channel': 'push',
-        'headings': {'en': title},
-        'contents': {'en': message},
-        'priority': 10,
-        'data': additionalData ?? {},
-      };
-
-      // API v2: player_ids → include_subscription_ids
-      //         external_user_id → include_aliases.external_id
-      if (playerIds.isNotEmpty) {
-        body['include_subscription_ids'] = playerIds;
-        print('📡 Invio via subscription_ids (v2): $playerIds');
-      } else {
-        body['include_aliases'] = {'external_id': [firebaseUid]};
-        print('📡 Fallback: invio via external_id (v2): $firebaseUid');
-      }
-
-      final response = await http.post(
-        url,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Key $restApiKey',
+      // Chiama la Supabase Edge Function (chiave REST mai esposta nel client)
+      final response = await supabase.functions.invoke(
+        'send-push-notification',
+        body: {
+          'firebaseUid': firebaseUid,
+          'title': title,
+          'message': message,
+          'additionalData': additionalData ?? {},
+          'playerIds': playerIds,
         },
-        body: json.encode(body),
       );
 
-      if (response.statusCode == 200) {
+      final data = response.data as Map<String, dynamic>?;
+      final success = data?['success'] == true;
+
+      if (success) {
         print('✅ Notifica inviata con successo');
-        print('   📊 Response: ${response.body}');
+        print('   📊 Response: $data');
         return true;
-      } else if (response.statusCode == 400) {
-        // 400 con "No Subscriptions" = utente senza device attivi
-        final decoded = json.decode(response.body);
-        final errors = (decoded['errors'] as List? ?? []).toString();
-        if (errors.contains('No Subscriptions') || errors.contains('subscription')) {
-          print('⚠️ Utente senza subscription attiva (nessun device registrato)');
-          return false;
-        }
-        print('❌ Errore invio notifica: ${response.statusCode}');
-        print('   📄 Body: ${response.body}');
-        return false;
       } else {
-        print('❌ Errore invio notifica: ${response.statusCode}');
-        print('   📄 Body: ${response.body}');
+        final status = data?['status'];
+        final body = data?['body'];
+        // 400 "No Subscriptions" = utente senza device attivi, non critico
+        if (status == 400) {
+          final errors = body?['errors']?.toString() ?? '';
+          if (errors.contains('No Subscriptions') || errors.contains('subscription')) {
+            print('⚠️ Utente senza subscription attiva');
+            return false;
+          }
+        }
+        print('❌ Notifica non inviata (status: $status): $body');
         return false;
       }
     } catch (e) {
