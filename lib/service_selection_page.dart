@@ -77,21 +77,78 @@ class _ServiceSelectionPageState extends State<ServiceSelectionPage> {
       _calculateTotals();
     });
 
-    // Solo per donna: se è un colore ritocco o colore totale,
-    // aggiungi automaticamente la piega corrispondente alla lunghezza
+    // Solo per donna: gestione piega automatica o con popup
     if (widget.section == 'donna') {
       final desc = (service['descrizione'] as String).toUpperCase();
-      final isColore = desc.contains('COLORE RITOCCO') || desc.contains('COLORE TOTALE');
+      final haPiega = _selectedServices.any(
+        (s) => (s['descrizione'] as String).toUpperCase().contains('PIEGA'),
+      );
 
-      if (isColore) {
-        final haPiega = _selectedServices.any(
-          (s) => (s['descrizione'] as String).toUpperCase().contains('PIEGA'),
-        );
-        if (!haPiega) {
+      if (!haPiega) {
+        final isColore = desc.contains('COLORE RITOCCO') || desc.contains('COLORE TOTALE');
+        final isCambioLook = desc.contains('CAMBIO LOOK');
+
+        if (isColore) {
+          // Piega automatica in base alla lunghezza del servizio colore
           _aggiungiPiegaAutomatica(desc);
+        } else if (isCambioLook) {
+          // Popup obbligatorio: l'utente deve scegliere il tipo di piega
+          await _mostraPopupPiegaObbligatorio();
         }
       }
     }
+  }
+
+  /// Popup obbligatorio per scegliere la piega (CAMBIO LOOK)
+  /// Non ha pulsante "Senza piega" — la scelta è obbligatoria
+  Future<void> _mostraPopupPiegaObbligatorio() async {
+    final piegaServices = _services
+        .where((s) => (s['descrizione'] as String).toUpperCase().contains('PIEGA CAPELLI'))
+        .toList();
+
+    if (piegaServices.isEmpty || !mounted) return;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false, // non si può chiudere toccando fuori
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF2d2d2d),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.content_cut, color: Colors.pink),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Seleziona tipo di piega',
+                style: TextStyle(color: Colors.white, fontSize: 16),
+              ),
+            ),
+          ],
+        ),
+        content: const Text(
+          'Per il cambio look è necessario selezionare la piega.',
+          style: TextStyle(color: Colors.white70, fontSize: 14),
+        ),
+        actions: piegaServices.map((piega) => ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.pink,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          ),
+          onPressed: () {
+            setState(() {
+              _selectedServices.add(piega);
+              _calculateTotals();
+            });
+            Navigator.of(ctx).pop();
+          },
+          child: Text(
+            piega['descrizione'],
+            style: const TextStyle(color: Colors.white, fontSize: 12),
+          ),
+        )).toList(),
+      ),
+    );
   }
 
   /// Aggiunge automaticamente la piega con la stessa lunghezza del colore selezionato

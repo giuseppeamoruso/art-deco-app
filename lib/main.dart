@@ -75,10 +75,9 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final currentTheme = ThemeManager.getCurrentTheme();
     return MaterialApp(
       title: 'Art Decò',
-      theme: ThemeManager.getTheme(currentTheme),
+      theme: ThemeManager.getTheme(),
       // 🆕 Aggiungiamo navigatorKey per poter navigare dai deep link
       navigatorKey: navigatorKey,
       localizationsDelegates: const [

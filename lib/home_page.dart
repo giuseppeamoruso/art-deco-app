@@ -9,7 +9,6 @@ import 'notification_page.dart';
 import 'onesignal_service.dart';
 import 'services_list_page.dart';
 import 'profile_page.dart';
-import 'theme_manager.dart';
 import 'seasonal_decoration.dart';
 
 class HomePage extends StatefulWidget {
@@ -617,16 +616,16 @@ class _HomePageState extends State<HomePage> {
       return Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          gradient: LinearGradient(
+          gradient: const LinearGradient(
             colors: [
-              ThemeManager.christmasRed,
-              ThemeManager.christmasGreen,
+              Color(0xFFD32F2F),
+              Color(0xFF388E3C),
             ],
           ),
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: ThemeManager.christmasRed.withOpacity(0.3),
+              color: Color(0xFFD32F2F),
               blurRadius: 12,
               offset: const Offset(0, 4),
             ),
@@ -669,10 +668,10 @@ class _HomePageState extends State<HomePage> {
       return Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          gradient: LinearGradient(
+          gradient: const LinearGradient(
             colors: [
-              ThemeManager.halloweenOrange,
-              ThemeManager.halloweenPurple,
+              Colors.orange,
+              Colors.purple,
             ],
           ),
           borderRadius: BorderRadius.circular(16),
@@ -704,52 +703,6 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
             const Text('🕷️', style: TextStyle(fontSize: 32)),
-          ],
-        ),
-      );
-    }
-
-    // ☀️ ESTATE
-    final theme = ThemeManager.getCurrentTheme();
-    if (theme == AppTheme.summer) {
-      return Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [
-              Color(0xFF00BCD4),
-              Color(0xFFFFEB3B),
-            ],
-          ),
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(
-          children: [
-            const Text('☀️', style: TextStyle(fontSize: 32)),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: const [
-                  Text(
-                    'Buona Estate!',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  Text(
-                    'Godetevi il sole! 🏖️',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Text('🌊', style: TextStyle(fontSize: 32)),
           ],
         ),
       );
