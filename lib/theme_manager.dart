@@ -23,11 +23,6 @@ class ThemeManager {
       return AppTheme.halloween;
     }
 
-    // ☀️ ESTATE (1 Giugno - 31 Agosto)
-    if (month >= 6 && month <= 8) {
-      return AppTheme.summer;
-    }
-
     return AppTheme.standard;
   }
 
