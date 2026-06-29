@@ -75,32 +75,45 @@ class _AdminAppointmentsPageState extends State<AdminAppointmentsPage> with Sing
 
     try {
       final supabase = Supabase.instance.client;
-      final response = await supabase
-          .from('APPUNTAMENTI')
-          .select('''
-            id,
-            data,
-            ora_inizio,
-            ora_fine,
-            durata_totale,
-            prezzo_totale,
-            note,
-            stylist_id,
-            user_id,
-            STYLIST!inner(id, descrizione),
-            USERS!inner(id, nome, cognome, telefono, email),
-            APPUNTAMENTI_SERVIZI(
-              SERVIZI(descrizione, prezzo)
-            ),
-            PAGAMENTI(metodo_pagamento, stato)
-          ''')
-          .order('data', ascending: true)
-          .order('ora_inizio', ascending: true)
-          .limit(10000); // Supabase di default restituisce max 1000 righe:
-                          // senza questo gli appuntamenti più recenti venivano tagliati fuori
+
+      // Supabase restituisce al massimo 1000 righe per richiesta: scarichiamo
+      // a blocchi (paginazione) finché ci sono dati, così funziona con
+      // qualsiasi numero di appuntamenti senza limiti fissi.
+      const int pageSize = 1000;
+      final List<Map<String, dynamic>> tutti = [];
+      int offset = 0;
+      while (true) {
+        final page = await supabase
+            .from('APPUNTAMENTI')
+            .select('''
+              id,
+              data,
+              ora_inizio,
+              ora_fine,
+              durata_totale,
+              prezzo_totale,
+              note,
+              stylist_id,
+              user_id,
+              STYLIST!inner(id, descrizione),
+              USERS!inner(id, nome, cognome, telefono, email),
+              APPUNTAMENTI_SERVIZI(
+                SERVIZI(descrizione, prezzo)
+              ),
+              PAGAMENTI(metodo_pagamento, stato)
+            ''')
+            .order('data', ascending: true)
+            .order('ora_inizio', ascending: true)
+            .range(offset, offset + pageSize - 1);
+
+        final pageList = List<Map<String, dynamic>>.from(page);
+        tutti.addAll(pageList);
+        if (pageList.length < pageSize) break; // ultima pagina raggiunta
+        offset += pageSize;
+      }
 
       setState(() {
-        _appointments = List<Map<String, dynamic>>.from(response);
+        _appointments = tutti;
         _applyFilters();
         _isLoading = false;
       });
