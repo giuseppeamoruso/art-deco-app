@@ -95,7 +95,9 @@ class _AdminAppointmentsPageState extends State<AdminAppointmentsPage> with Sing
             PAGAMENTI(metodo_pagamento, stato)
           ''')
           .order('data', ascending: true)
-          .order('ora_inizio', ascending: true);
+          .order('ora_inizio', ascending: true)
+          .limit(10000); // Supabase di default restituisce max 1000 righe:
+                          // senza questo gli appuntamenti più recenti venivano tagliati fuori
 
       setState(() {
         _appointments = List<Map<String, dynamic>>.from(response);

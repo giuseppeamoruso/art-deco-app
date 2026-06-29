@@ -176,22 +176,39 @@ class _LoginPageState extends State<LoginPage> {
       if (user == null) return;
 
       final supabase = Supabase.instance.client;
-      final record = await supabase
+      var record = await supabase
           .from('USERS')
           .select('telefono, cognome')
           .eq('uid', user.uid)
           .maybeSingle();
 
-      if (record == null) return;
+      // Se la riga non esiste (sync al login fallita) la creiamo, altrimenti
+      // il telefono non sarebbe salvabile da nessuna parte.
+      if (record == null) {
+        await supabase.from('USERS').insert({
+          'uid': user.uid,
+          'nome': user.displayName?.split(' ').first ?? 'Utente',
+          'cognome': (user.displayName != null && user.displayName!.split(' ').length > 1)
+              ? user.displayName!.split(' ').skip(1).join(' ')
+              : '',
+          'email': user.email ?? '',
+          'telefono': '',
+          'role': 'user',
+        });
+        record = {'telefono': '', 'cognome': ''};
+        print('✅ Record USERS creato (era mancante) per uid ${user.uid}');
+      }
 
       final telefono = (record['telefono'] as String?) ?? '';
       if (telefono.trim().isNotEmpty) return; // profilo già completo
+
+      final cognomeIniziale = (record['cognome'] as String?) ?? '';
 
       // Mostra dialog per inserire il telefono
       if (!mounted) return;
       final telefonoController = TextEditingController();
       final cognomeController = TextEditingController(
-        text: (record['cognome'] as String?) ?? '',
+        text: cognomeIniziale,
       );
       final formKey = GlobalKey<FormState>();
 
@@ -218,7 +235,7 @@ class _LoginPageState extends State<LoginPage> {
                   style: TextStyle(color: Colors.white70, fontSize: 14),
                 ),
                 const SizedBox(height: 16),
-                if ((record['cognome'] as String? ?? '').trim().isEmpty)
+                if (cognomeIniziale.trim().isEmpty)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: TextFormField(

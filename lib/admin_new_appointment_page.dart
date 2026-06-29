@@ -3078,6 +3078,7 @@ class _AdminBookingConfirmationPageState extends State<AdminBookingConfirmationP
               .from('USERS')
               .select('id')
               .eq('email', clientEmail)
+              .limit(1)
               .maybeSingle();
 
           if (existingUserByEmail != null) {
@@ -3091,6 +3092,7 @@ class _AdminBookingConfirmationPageState extends State<AdminBookingConfirmationP
               .from('USERS')
               .select('id')
               .eq('telefono', clientPhone)
+              .limit(1)
               .maybeSingle();
 
           if (existingUserByPhone != null) {

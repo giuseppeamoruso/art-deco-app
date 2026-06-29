@@ -178,10 +178,7 @@ class _ProfilePageState extends State<ProfilePage> with TickerProviderStateMixin
 
       final supabase = Supabase.instance.client;
 
-      // Aggiorna i dati su Supabase
-      await supabase
-          .from('USERS')
-          .update({
+      final datiUtente = {
         'nome': _nomeController.text.trim(),
         'cognome': _cognomeController.text.trim(),
         'email': _emailController.text.trim(),
@@ -189,8 +186,26 @@ class _ProfilePageState extends State<ProfilePage> with TickerProviderStateMixin
         'codice_fiscale': _codiceFiscaleController.text.trim().isEmpty
             ? null
             : _codiceFiscaleController.text.trim(),
-      })
-          .eq('uid', user.uid);
+      };
+
+      // Aggiorna i dati su Supabase
+      final aggiornati = await supabase
+          .from('USERS')
+          .update(datiUtente)
+          .eq('uid', user.uid)
+          .select('id');
+
+      // Se nessuna riga è stata aggiornata significa che l'utente non ha
+      // ancora un record in USERS (es. sync al login fallita): lo creiamo.
+      // Senza questo il telefono "non si salvava" per chi non aveva la riga.
+      if (aggiornati.isEmpty) {
+        await supabase.from('USERS').insert({
+          'uid': user.uid,
+          ...datiUtente,
+          'role': 'user',
+        });
+        print('✅ Record USERS creato (era mancante) per uid ${user.uid}');
+      }
 
       // Aggiorna display name su Firebase
       final newDisplayName = '${_nomeController.text.trim()} ${_cognomeController.text.trim()}';
